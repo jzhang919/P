@@ -130,9 +130,6 @@ namespace Main
     }
     public static partial class GlobalFunctions
     {
-    }
-    public static partial class GlobalFunctions
-    {
         public static PMachineValue CreateTimer(PMachineValue client, PMachine currentMachine)
         {
             PMachineValue TMP_tmp0 = null;
@@ -271,7 +268,7 @@ namespace Main
         public void Anon_3()
         {
             Client currentMachine = this;
-            currentMachine.Assert(((PrtBool)false),"Read Failed after Write!!");
+            currentMachine.Assert(((PrtBool)false),"Assertion Failed: Read Failed after Write!!");
             throw new PUnreachableCodeException();
         }
         public void Anon_4()
@@ -283,7 +280,7 @@ namespace Main
             PrtBool TMP_tmp1_5 = ((PrtBool)false);
             TMP_tmp0_5 = (PrtInt)(((PrtNamedTuple)randomTransaction)["val"]);
             TMP_tmp1_5 = (PrtBool)((PrtValues.SafeEquals(payload_1,TMP_tmp0_5)));
-            currentMachine.Assert(TMP_tmp1_5,"Incorrect value returned !!");
+            currentMachine.Assert(TMP_tmp1_5,"Assertion Failed: Incorrect value returned !!");
         }
         public void Anon_5()
         {
@@ -562,11 +559,18 @@ namespace Main
             IPrtValue TMP_tmp6_3 = null;
             PrtInt TMP_tmp7_3 = ((PrtInt)0);
             i_1 = (PrtInt)(((PrtInt)0));
-            TMP_tmp0_13 = (PrtInt)(((PrtInt)(participants).Count));
-            TMP_tmp1_12 = (PrtBool)((i_1) < (TMP_tmp0_13));
-            TMP_tmp2_8 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp1_12)?.Clone()));
-            while (TMP_tmp2_8)
+            while (((PrtBool)true))
             {
+                TMP_tmp0_13 = (PrtInt)(((PrtInt)(participants).Count));
+                TMP_tmp1_12 = (PrtBool)((i_1) < (TMP_tmp0_13));
+                TMP_tmp2_8 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp1_12)?.Clone()));
+                if (TMP_tmp2_8)
+                {
+                }
+                else
+                {
+                    break;
+                }
                 TMP_tmp3_6 = (PMachineValue)(((PrtSeq)participants)[i_1]);
                 TMP_tmp4_5 = (PMachineValue)(((PMachineValue)((IPrtValue)TMP_tmp3_6)?.Clone()));
                 TMP_tmp5_3 = (PEvent)(((PEvent)((IPrtValue)message)?.Clone()));
@@ -574,9 +578,6 @@ namespace Main
                 currentMachine.SendEvent(TMP_tmp4_5, (Event)TMP_tmp5_3, TMP_tmp6_3);
                 TMP_tmp7_3 = (PrtInt)((i_1) + (((PrtInt)1)));
                 i_1 = TMP_tmp7_3;
-                TMP_tmp0_13 = (PrtInt)(((PrtInt)(participants).Count));
-                TMP_tmp1_12 = (PrtBool)((i_1) < (TMP_tmp0_13));
-                TMP_tmp2_8 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp1_12)?.Clone()));
             }
         }
         [Start]
@@ -674,7 +675,7 @@ namespace Main
             PrtBool TMP_tmp3_7 = ((PrtBool)false);
             TMP_tmp0_14 = (PrtInt)(((PrtNamedTuple)pendingWrTrans_1)["transId"]);
             TMP_tmp1_13 = (PrtBool)((PrtValues.SafeEquals(TMP_tmp0_14,transId_2)));
-            currentMachine.Assert(TMP_tmp1_13,"");
+            currentMachine.Assert(TMP_tmp1_13,"Assertion Failed: ");
             TMP_tmp2_9 = (PrtInt)(((PrtNamedTuple)pendingWrTrans_1)["transId"]);
             TMP_tmp3_7 = (PrtBool)((PrtValues.SafeEquals(TMP_tmp2_9,transId_2)));
             if (TMP_tmp3_7)
@@ -695,7 +696,7 @@ namespace Main
             PrtInt TMP_tmp5_4 = ((PrtInt)0);
             TMP_tmp0_15 = (PrtInt)(((PrtNamedTuple)pendingWrTrans_1)["transId"]);
             TMP_tmp1_14 = (PrtBool)((PrtValues.SafeEquals(TMP_tmp0_15,transId_3)));
-            currentMachine.Assert(TMP_tmp1_14,"");
+            currentMachine.Assert(TMP_tmp1_14,"Assertion Failed: ");
             TMP_tmp2_10 = (PrtInt)(((PrtNamedTuple)pendingWrTrans_1)["transId"]);
             TMP_tmp3_8 = (PrtBool)((PrtValues.SafeEquals(TMP_tmp2_10,transId_3)));
             if (TMP_tmp3_8)
@@ -728,7 +729,7 @@ namespace Main
             pendingWrTrans_1 = (PrtNamedTuple)(((PrtNamedTuple)((IPrtValue)prepareReq)?.Clone()));
             TMP_tmp0_16 = (PrtInt)(((PrtNamedTuple)pendingWrTrans_1)["transId"]);
             TMP_tmp1_15 = (PrtBool)((TMP_tmp0_16) > (lastTransId));
-            currentMachine.Assert(TMP_tmp1_15,"");
+            currentMachine.Assert(TMP_tmp1_15,"Assertion Failed: ");
             TMP_tmp2_11 = (PrtBool)(((PrtBool)currentMachine.Random()));
             if (TMP_tmp2_11)
             {
@@ -833,7 +834,7 @@ namespace Main
             TMP_tmp0_18 = (PMachineValue)(((PrtNamedTuple)payload_5)["participant"]);
             TMP_tmp1_17 = (PrtBool)(((PrtBool)(((PrtMap)receivedLocalCommits).ContainsKey(TMP_tmp0_18))));
             TMP_tmp2_13 = (PrtBool)(!(TMP_tmp1_17));
-            currentMachine.Assert(TMP_tmp2_13,"");
+            currentMachine.Assert(TMP_tmp2_13,"Assertion Failed: ");
             TMP_tmp3_11 = (PMachineValue)(((PrtNamedTuple)payload_5)["participant"]);
             TMP_tmp4_9 = (PrtInt)(((PrtNamedTuple)payload_5)["transId"]);
             ((PrtMap)receivedLocalCommits)[TMP_tmp3_11] = TMP_tmp4_9;
@@ -846,7 +847,7 @@ namespace Main
             PrtMap TMP_tmp2_14 = new PrtMap();
             TMP_tmp0_19 = (PrtInt)(((PrtInt)(receivedLocalCommits).Count));
             TMP_tmp1_18 = (PrtBool)((PrtValues.SafeEquals(TMP_tmp0_19,numParticipants)));
-            currentMachine.Assert(TMP_tmp1_18,"");
+            currentMachine.Assert(TMP_tmp1_18,"Assertion Failed: ");
             TMP_tmp2_14 = (PrtMap)(new PrtMap());
             receivedLocalCommits = TMP_tmp2_14;
         }
@@ -956,16 +957,21 @@ namespace Main
             PMachineValue TMP_tmp5_7 = null;
             PMachineValue TMP_tmp6_6 = null;
             PMachineValue TMP_tmp7_6 = null;
-            TMP_tmp0_21 = (PrtBool)((i_2) < (((PrtInt)2)));
-            TMP_tmp1_19 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp0_21)?.Clone()));
-            while (TMP_tmp1_19)
+            while (((PrtBool)true))
             {
+                TMP_tmp0_21 = (PrtBool)((i_2) < (((PrtInt)2)));
+                TMP_tmp1_19 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp0_21)?.Clone()));
+                if (TMP_tmp1_19)
+                {
+                }
+                else
+                {
+                    break;
+                }
                 TMP_tmp2_15 = (PMachineValue)(currentMachine.CreateInterface<I_Participant>( currentMachine));
                 ((PrtSeq)participants_1).Insert(i_2, TMP_tmp2_15);
                 TMP_tmp3_12 = (PrtInt)((i_2) + (((PrtInt)1)));
                 i_2 = TMP_tmp3_12;
-                TMP_tmp0_21 = (PrtBool)((i_2) < (((PrtInt)2)));
-                TMP_tmp1_19 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp0_21)?.Clone()));
             }
             TMP_tmp4_10 = (PrtSeq)(((PrtSeq)((IPrtValue)participants_1)?.Clone()));
             TMP_tmp5_7 = (PMachineValue)(currentMachine.CreateInterface<I_Coordinator>( currentMachine, TMP_tmp4_10));
@@ -1052,16 +1058,21 @@ namespace Main
             PrtSeq TMP_tmp6_7 = new PrtSeq();
             PMachineValue TMP_tmp7_7 = null;
             PMachineValue TMP_tmp8_5 = null;
-            TMP_tmp0_22 = (PrtBool)((i_3) < (((PrtInt)2)));
-            TMP_tmp1_20 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp0_22)?.Clone()));
-            while (TMP_tmp1_20)
+            while (((PrtBool)true))
             {
+                TMP_tmp0_22 = (PrtBool)((i_3) < (((PrtInt)2)));
+                TMP_tmp1_20 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp0_22)?.Clone()));
+                if (TMP_tmp1_20)
+                {
+                }
+                else
+                {
+                    break;
+                }
                 TMP_tmp2_16 = (PMachineValue)(currentMachine.CreateInterface<I_Participant>( currentMachine));
                 ((PrtSeq)participants_2).Insert(i_3, TMP_tmp2_16);
                 TMP_tmp3_13 = (PrtInt)((i_3) + (((PrtInt)1)));
                 i_3 = TMP_tmp3_13;
-                TMP_tmp0_22 = (PrtBool)((i_3) < (((PrtInt)2)));
-                TMP_tmp1_20 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp0_22)?.Clone()));
             }
             TMP_tmp4_11 = (PrtSeq)(((PrtSeq)((IPrtValue)participants_2)?.Clone()));
             TMP_tmp5_8 = (PMachineValue)(currentMachine.CreateInterface<I_Coordinator>( currentMachine, TMP_tmp4_11));
@@ -1146,11 +1157,18 @@ namespace Main
             PEvent TMP_tmp6_8 = null;
             PrtInt TMP_tmp7_8 = ((PrtInt)0);
             i_4 = (PrtInt)(((PrtInt)0));
-            TMP_tmp0_23 = (PrtInt)(((PrtInt)(participants_3).Count));
-            TMP_tmp1_21 = (PrtBool)((i_4) < (TMP_tmp0_23));
-            TMP_tmp2_17 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp1_21)?.Clone()));
-            while (TMP_tmp2_17)
+            while (((PrtBool)true))
             {
+                TMP_tmp0_23 = (PrtInt)(((PrtInt)(participants_3).Count));
+                TMP_tmp1_21 = (PrtBool)((i_4) < (TMP_tmp0_23));
+                TMP_tmp2_17 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp1_21)?.Clone()));
+                if (TMP_tmp2_17)
+                {
+                }
+                else
+                {
+                    break;
+                }
                 TMP_tmp3_14 = (PrtBool)(((PrtBool)currentMachine.Random()));
                 if (TMP_tmp3_14)
                 {
@@ -1161,9 +1179,6 @@ namespace Main
                 }
                 TMP_tmp7_8 = (PrtInt)((i_4) + (((PrtInt)1)));
                 i_4 = TMP_tmp7_8;
-                TMP_tmp0_23 = (PrtInt)(((PrtInt)(participants_3).Count));
-                TMP_tmp1_21 = (PrtBool)((i_4) < (TMP_tmp0_23));
-                TMP_tmp2_17 = (PrtBool)(((PrtBool)((IPrtValue)TMP_tmp1_21)?.Clone()));
             }
         }
         [Start]
