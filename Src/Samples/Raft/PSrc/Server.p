@@ -3,798 +3,598 @@
 // Licensed under the MIT License (MIT). See License.txt in the repo root for license information.
 // ------------------------------------------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
-using Microsoft.PSharp;
+// using System;
+// using System.Collections.Generic;
+// using System.Linq;
+// using System.Text;
+// using System.Threading.Tasks;
 
-namespace Raft
+// namespace Raft
+// {
+
+machine Server
 {
-    /// <summary>
-    /// A server in Raft can be one of the following three roles:
-    /// follower, candidate or leader.
-    /// </summary>
-    internal class Server : Machine
+    var ServerId : int;
+    var ClusterManager : machine;
+    var Servers: seq[machine];
+    var LeaderId: machine;
+    var ElectionTimer: machine;
+    var PeriodicTimer: machine;
+    var CurrentTerm: int;
+    var VotedFor: machine;
+    var Logs: seq[Log];
+    var CommitIndex: int;
+    var LastApplied: int;
+    var NextIndex: map[machine, int];
+    var MatchIndex: map[machine, int];
+    var VotesReceived: int;
+    var LastClientRequest: Request;
+    var i: int;
+
+    start state Init
     {
-        #region events
-
-        /// <summary>
-        /// Used to configure the server.
-        /// </summary>
-        public class ConfigureEvent : Event
+        entry
         {
-            public int Id;
-            public MachineId[] Servers;
-            public MachineId ClusterManager;
+            i = 0;
+            CurrentTerm = 0;
+            LeaderId = null;
+            VotedFor = null;
+            Logs = default(seq[Log]);
+            CommitIndex = 0;
+            LastApplied = 0;
+            NextIndex = default(map[machine, int]);
+            MatchIndex = default(map[machine, int]);
+        }
 
-            public ConfigureEvent(int id, MachineId[] servers, MachineId manager)
-                : base()
+        on SConfigureEvent do (payload: (Id: int, Servers: seq[machine], ClusterManager: machine)) {
+            ServerId = payload.Id;
+            Servers = payload.Servers;
+            ClusterManager = payload.ClusterManager;
+
+            ElectionTimer = default(machine);
+            send ElectionTimer, EConfigureEvent, this;
+
+            PeriodicTimer = default(machine);
+            send PeriodicTimer, PConfigureEvent, this;
+
+            raise BecomeFollower;
+        }
+        on BecomeFollower goto Follower;
+        defer VoteRequest, AppendEntriesRequest;
+    }
+
+    state Follower
+    {
+        entry
+        {
+            LeaderId = null;
+            VotesReceived = 0;
+
+            send ElectionTimer, EStartTimer;
+        }
+
+        on Request do (payload: (Req: Request)) {
+            if (LeaderId != null)
             {
-                this.Id = id;
-                this.Servers = servers;
-                this.ClusterManager = manager;
-            }
-        }
-
-        /// <summary>
-        /// Initiated by candidates during elections.
-        /// </summary>
-        public class VoteRequest : Event
-        {
-            public int Term; // candidate’s term
-            public MachineId CandidateId; // candidate requesting vote
-            public int LastLogIndex; // index of candidate’s last log entry
-            public int LastLogTerm; // term of candidate’s last log entry
-
-            public VoteRequest(int term, MachineId candidateId, int lastLogIndex, int lastLogTerm)
-                : base()
-            {
-                this.Term = term;
-                this.CandidateId = candidateId;
-                this.LastLogIndex = lastLogIndex;
-                this.LastLogTerm = lastLogTerm;
-            }
-        }
-
-        /// <summary>
-        /// Response to a vote request.
-        /// </summary>
-        public class VoteResponse : Event
-        {
-            public int Term; // currentTerm, for candidate to update itself
-            public bool VoteGranted; // true means candidate received vote
-
-            public VoteResponse(int term, bool voteGranted)
-                : base()
-            {
-                this.Term = term;
-                this.VoteGranted = voteGranted;
-            }
-        }
-
-        /// <summary>
-        /// Initiated by leaders to replicate log entries and
-        /// to provide a form of heartbeat.
-        /// </summary>
-        public class AppendEntriesRequest : Event
-        {
-            public int Term; // leader's term
-            public MachineId LeaderId; // so follower can redirect clients
-            public int PrevLogIndex; // index of log entry immediately preceding new ones
-            public int PrevLogTerm; // term of PrevLogIndex entry
-            public List<Log> Entries; // log entries to store (empty for heartbeat; may send more than one for efficiency)
-            public int LeaderCommit; // leader’s CommitIndex
-
-            public MachineId ReceiverEndpoint; // client
-
-            public AppendEntriesRequest(int term, MachineId leaderId, int prevLogIndex,
-                int prevLogTerm, List<Log> entries, int leaderCommit, MachineId client)
-                : base()
-            {
-                this.Term = term;
-                this.LeaderId = leaderId;
-                this.PrevLogIndex = prevLogIndex;
-                this.PrevLogTerm = prevLogTerm;
-                this.Entries = entries;
-                this.LeaderCommit = leaderCommit;
-                this.ReceiverEndpoint = client;
-            }
-        }
-
-        /// <summary>
-        /// Response to an append entries request.
-        /// </summary>
-        public class AppendEntriesResponse : Event
-        {
-            public int Term; // current Term, for leader to update itself
-            public bool Success; // true if follower contained entry matching PrevLogIndex and PrevLogTerm
-
-            public MachineId Server;
-            public MachineId ReceiverEndpoint; // client
-
-            public AppendEntriesResponse(int term, bool success, MachineId server, MachineId client)
-                : base()
-            {
-                this.Term = term;
-                this.Success = success;
-                this.Server = server;
-                this.ReceiverEndpoint = client;
-            }
-        }
-
-        // Events for transitioning a server between roles.
-        private class BecomeFollower : Event { }
-        private class BecomeCandidate : Event { }
-        private class BecomeLeader : Event { }
-
-        internal class ShutDown : Event { }
-
-        #endregion
-
-        #region fields
-
-        /// <summary>
-        /// The id of this server.
-        /// </summary>
-        int ServerId;
-
-        /// <summary>
-        /// The cluster manager machine.
-        /// </summary>
-        MachineId ClusterManager;
-
-        /// <summary>
-        /// The servers.
-        /// </summary>
-        MachineId[] Servers;
-
-        /// <summary>
-        /// Leader id.
-        /// </summary>
-        MachineId LeaderId;
-
-        /// <summary>
-        /// The election timer of this server.
-        /// </summary>
-        MachineId ElectionTimer;
-
-        /// <summary>
-        /// The periodic timer of this server.
-        /// </summary>
-        MachineId PeriodicTimer;
-
-        /// <summary>
-        /// Latest term server has seen (initialized to 0 on
-        /// first boot, increases monotonically).
-        /// </summary>
-        int CurrentTerm;
-
-        /// <summary>
-        /// Candidate id that received vote in current term (or null if none).
-        /// </summary>
-        MachineId VotedFor;
-
-        /// <summary>
-        /// Log entries.
-        /// </summary>
-        List<Log> Logs;
-
-        /// <summary>
-        /// Index of highest log entry known to be committed (initialized
-        /// to 0, increases monotonically).
-        /// </summary>
-        int CommitIndex;
-
-        /// <summary>
-        /// Index of highest log entry applied to state machine (initialized
-        /// to 0, increases monotonically).
-        /// </summary>
-        int LastApplied;
-
-        /// <summary>
-        /// For each server, index of the next log entry to send to that
-        /// server (initialized to leader last log index + 1).
-        /// </summary>
-        Dictionary<MachineId, int> NextIndex;
-
-        /// <summary>
-        /// For each server, index of highest log entry known to be replicated
-        /// on server (initialized to 0, increases monotonically).
-        /// </summary>
-        Dictionary<MachineId, int> MatchIndex;
-
-        /// <summary>
-        /// Number of received votes.
-        /// </summary>
-        int VotesReceived;
-
-        /// <summary>
-        /// The latest client request.
-        /// </summary>
-        Client.Request LastClientRequest;
-
-        #endregion
-
-        #region initialization
-
-        [Start]
-        [OnEntry(nameof(EntryOnInit))]
-        [OnEventDoAction(typeof(ConfigureEvent), nameof(Configure))]
-        [OnEventGotoState(typeof(BecomeFollower), typeof(Follower))]
-        [DeferEvents(typeof(VoteRequest), typeof(AppendEntriesRequest))]
-        class Init : MachineState { }
-
-        void EntryOnInit()
-        {
-            this.CurrentTerm = 0;
-
-            this.LeaderId = null;
-            this.VotedFor = null;
-
-            this.Logs = new List<Log>();
-
-            this.CommitIndex = 0;
-            this.LastApplied = 0;
-
-            this.NextIndex = new Dictionary<MachineId, int>();
-            this.MatchIndex = new Dictionary<MachineId, int>();
-        }
-
-        void Configure()
-        {
-            this.ServerId = (this.ReceivedEvent as ConfigureEvent).Id;
-            this.Servers = (this.ReceivedEvent as ConfigureEvent).Servers;
-            this.ClusterManager = (this.ReceivedEvent as ConfigureEvent).ClusterManager;
-
-            this.ElectionTimer = this.CreateMachine(typeof(ElectionTimer));
-            this.Send(this.ElectionTimer, new ElectionTimer.ConfigureEvent(this.Id));
-
-            this.PeriodicTimer = this.CreateMachine(typeof(PeriodicTimer));
-            this.Send(this.PeriodicTimer, new PeriodicTimer.ConfigureEvent(this.Id));
-
-            this.Raise(new BecomeFollower());
-        }
-
-        #endregion
-
-        #region follower
-
-        [OnEntry(nameof(FollowerOnInit))]
-        [OnEventDoAction(typeof(Client.Request), nameof(RedirectClientRequest))]
-        [OnEventDoAction(typeof(VoteRequest), nameof(VoteAsFollower))]
-        [OnEventDoAction(typeof(VoteResponse), nameof(RespondVoteAsFollower))]
-        [OnEventDoAction(typeof(AppendEntriesRequest), nameof(AppendEntriesAsFollower))]
-        [OnEventDoAction(typeof(AppendEntriesResponse), nameof(RespondAppendEntriesAsFollower))]
-        [OnEventDoAction(typeof(ElectionTimer.TimeoutEvent), nameof(StartLeaderElection))]
-        [OnEventDoAction(typeof(ShutDown), nameof(ShuttingDown))]
-        [OnEventGotoState(typeof(BecomeFollower), typeof(Follower))]
-        [OnEventGotoState(typeof(BecomeCandidate), typeof(Candidate))]
-        [IgnoreEvents(typeof(PeriodicTimer.TimeoutEvent))]
-        class Follower : MachineState { }
-
-        void FollowerOnInit()
-        {
-            this.LeaderId = null;
-            this.VotesReceived = 0;
-
-            this.Send(this.ElectionTimer, new ElectionTimer.StartTimerEvent());
-        }
-
-        void RedirectClientRequest()
-        {
-            if (this.LeaderId != null)
-            {
-                this.Send(this.LeaderId, this.ReceivedEvent);
+                send LeaderId, Request, payload.Client, payload.Command;
             }
             else
             {
-                this.Send(this.ClusterManager, new ClusterManager.RedirectRequest(this.ReceivedEvent));
+                send ClusterManager, RedirectRequest, payload;
             }
         }
-
-        void StartLeaderElection()
-        {
-            this.Raise(new BecomeCandidate());
-        }
-
-        void VoteAsFollower()
-        {
-            var request = this.ReceivedEvent as VoteRequest;
-            if (request.Term > this.CurrentTerm)
+        on VoteRequest do (payload: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
+            if (request.Term > CurrentTerm)
             {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
+                CurrentTerm = request.Term;
+                VotedFor = null;
             }
 
-            this.Vote(this.ReceivedEvent as VoteRequest);
+            Vote(payload);
         }
-
-        void RespondVoteAsFollower()
-        {
-            var request = this.ReceivedEvent as VoteResponse;
-            if (request.Term > this.CurrentTerm)
+        on VoteResponse do (request: VoteResponse) {
+            if (request.Term > CurrentTerm)
             {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
+                CurrentTerm = request.Term;
+                VotedFor = null;
             }
         }
-
-        void AppendEntriesAsFollower()
-        {
-            var request = this.ReceivedEvent as AppendEntriesRequest;
-            if (request.Term > this.CurrentTerm)
+        on AppendEntriesRequest do (request: AppendEntriesRequest){
+            if (request.Term > CurrentTerm)
             {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
+                CurrentTerm = request.Term;
+                VotedFor = null;
             }
 
-            this.AppendEntries(this.ReceivedEvent as AppendEntriesRequest);
+            AppendEntries(request);
         }
-
-        void RespondAppendEntriesAsFollower()
-        {
-            var request = this.ReceivedEvent as AppendEntriesResponse;
-            if (request.Term > this.CurrentTerm)
+        on AppendEntriesResponse do (request: AppendEntriesResponse){
+            if (request.Term > CurrentTerm)
             {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
+                CurrentTerm = request.Term;
+                VotedFor = null;
             }
         }
+        on ETimeout do {
+            raise BecomeCandidate;
+        }
+        on ShutDown do ShuttingDown;
+        on BecomeFollower goto Follower;
+        on BecomeCandidate goto Candidate;
+        ignore PTimeout;
+    }
 
-        #endregion
 
-        #region candidate
-
-        [OnEntry(nameof(CandidateOnInit))]
-        [OnEventDoAction(typeof(Client.Request), nameof(RedirectClientRequest))]
-        [OnEventDoAction(typeof(VoteRequest), nameof(VoteAsCandidate))]
-        [OnEventDoAction(typeof(VoteResponse), nameof(RespondVoteAsCandidate))]
-        [OnEventDoAction(typeof(AppendEntriesRequest), nameof(AppendEntriesAsCandidate))]
-        [OnEventDoAction(typeof(AppendEntriesResponse), nameof(RespondAppendEntriesAsCandidate))]
-        [OnEventDoAction(typeof(ElectionTimer.TimeoutEvent), nameof(StartLeaderElection))]
-        [OnEventDoAction(typeof(PeriodicTimer.TimeoutEvent), nameof(BroadcastVoteRequests))]
-        [OnEventDoAction(typeof(ShutDown), nameof(ShuttingDown))]
-        [OnEventGotoState(typeof(BecomeLeader), typeof(Leader))]
-        [OnEventGotoState(typeof(BecomeFollower), typeof(Follower))]
-        [OnEventGotoState(typeof(BecomeCandidate), typeof(Candidate))]
-        class Candidate : MachineState { }
-
-        void CandidateOnInit()
+    state Candidate
+    {
+        entry
         {
-            this.CurrentTerm++;
-            this.VotedFor = this.Id;
-            this.VotesReceived = 1;
+            CurrentTerm = CurrentTerm + 1;
+            VotedFor = this;
+            VotesReceived = 1;
 
-            this.Send(this.ElectionTimer, new ElectionTimer.StartTimerEvent());
+            send ElectionTimer, EStartTimer;
 
-            this.Logger.WriteLine("\n [Candidate] " + this.ServerId + " | term " + this.CurrentTerm +
-                " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
+            //Logger.WriteLine("\n [Candidate] " + this.ServerId + " | term " + this.CurrentTerm + " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
 
-            this.BroadcastVoteRequests();
+            BroadcastVoteRequests();
         }
 
-        void BroadcastVoteRequests()
-        {
-            // BUG: duplicate votes from same follower
-            this.Send(this.PeriodicTimer, new PeriodicTimer.StartTimerEvent());
-
-            for (int idx = 0; idx < this.Servers.Length; idx++)
+        on Request do RedirectClientRequest;
+        on VoteRequest do (request: VoteRequest){
+            if (request.Term > CurrentTerm)
             {
-                if (idx == this.ServerId)
-                    continue;
-
-                var lastLogIndex = this.Logs.Count;
-                var lastLogTerm = this.GetLogTermForIndex(lastLogIndex);
-
-                this.Send(this.Servers[idx], new VoteRequest(this.CurrentTerm, this.Id,
-                    lastLogIndex, lastLogTerm));
-            }
-        }
-
-        void VoteAsCandidate()
-        {
-            var request = this.ReceivedEvent as VoteRequest;
-            if (request.Term > this.CurrentTerm)
-            {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-                this.Vote(this.ReceivedEvent as VoteRequest);
-                this.Raise(new BecomeFollower());
+                CurrentTerm = request.Term;
+                VotedFor = null;
+                Vote(request);
+                raise BecomeFollower;
             }
             else
             {
-                this.Vote(this.ReceivedEvent as VoteRequest);
+                Vote(request);
             }
         }
-
-        void RespondVoteAsCandidate()
-        {
-            var request = this.ReceivedEvent as VoteResponse;
-            if (request.Term > this.CurrentTerm)
+        on VoteResponse do (request: VoteResponse) {
+            if (request.Term > CurrentTerm)
             {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-                this.Raise(new BecomeFollower());
-                return;
+                CurrentTerm = request.Term;
+                VotedFor = null;
+                raise BecomeFollower;
             }
-            else if (request.Term != this.CurrentTerm)
+            else if (request.Term != CurrentTerm)
             {
-                return;
             }
 
-            if (request.VoteGranted)
+            else if (request.VoteGranted)
             {
-                this.VotesReceived++;
-                if (this.VotesReceived >= (this.Servers.Length / 2) + 1)
+                VotesReceived = VotesReceived + 1;
+                if (VotesReceived >= (sizeof(Servers) / 2) + 1)
                 {
-                    this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
-                        " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
-                    this.VotesReceived = 0;
-                    this.Raise(new BecomeLeader());
+                   // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
+                    //    " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
+                    VotesReceived = 0;
+                    raise BecomeLeader;
                 }
             }
         }
-
-        void AppendEntriesAsCandidate()
-        {
-            var request = this.ReceivedEvent as AppendEntriesRequest;
-            if (request.Term > this.CurrentTerm)
+        on AppendEntriesRequest do (request: AppendEntriesRequest) {
+            if (request.Term > CurrentTerm)
             {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-                this.AppendEntries(this.ReceivedEvent as AppendEntriesRequest);
-                this.Raise(new BecomeFollower());
+                CurrentTerm = request.Term;
+                VotedFor = null;
+                AppendEntries(request);
+                raise BecomeFollower;
             }
             else
             {
-                this.AppendEntries(this.ReceivedEvent as AppendEntriesRequest);
+                AppendEntries(request);
             }
         }
-
-        void RespondAppendEntriesAsCandidate()
-        {
-            var request = this.ReceivedEvent as AppendEntriesResponse;
-            if (request.Term > this.CurrentTerm)
-            {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-                this.Raise(new BecomeFollower());
-            }
+        on AppendEntriesResponse do (request: AppendEntriesResponse) {
+            RespondAppendEntriesAsCandidate(request);
         }
+        on ETimeout do {
+            raise BecomeCandidate;
+        }
+        on PTimeout do BroadcastVoteRequests;
+        on ShutDown do ShuttingDown;
+        on BecomeLeader goto Leader;
+        on BecomeFollower goto Follower;
+        on BecomeCandidate goto Candidate;
+    }
 
-        #endregion
+    fun BroadcastVoteRequests()
+    {
+        // BUG: duplicate votes from same follower
+        var idx: int;
+        var lastLogIndex: int;
+        var lastLogTerm: int; 
 
-        #region leader
+        send PeriodicTimer, PStartTimer;
+        idx = 0;
+        while (idx < sizeof(Servers)) {
+           if (idx == ServerId) {
+                continue;
+           }
+            lastLogIndex = sizeof(Logs);
+            lastLogTerm = GetLogTermForIndex(lastLogIndex);
 
-        [OnEntry(nameof(LeaderOnInit))]
-        [OnEventDoAction(typeof(Client.Request), nameof(ProcessClientRequest))]
-        [OnEventDoAction(typeof(VoteRequest), nameof(VoteAsLeader))]
-        [OnEventDoAction(typeof(VoteResponse), nameof(RespondVoteAsLeader))]
-        [OnEventDoAction(typeof(AppendEntriesRequest), nameof(AppendEntriesAsLeader))]
-        [OnEventDoAction(typeof(AppendEntriesResponse), nameof(RespondAppendEntriesAsLeader))]
-        [OnEventDoAction(typeof(ShutDown), nameof(ShuttingDown))]
-        [OnEventGotoState(typeof(BecomeFollower), typeof(Follower))]
-        [IgnoreEvents(typeof(ElectionTimer.TimeoutEvent), typeof(PeriodicTimer.TimeoutEvent))]
-        class Leader : MachineState { }
+            send Servers[idx], VoteRequest, (CurrentTerm, this, lastLogIndex, lastLogTerm);
+            idx = idx + 1;
+        }
+    }
 
-        void LeaderOnInit()
+    fun RespondAppendEntriesAsCandidate(request: AppendEntriesResponse)
+    {
+        if (request.Term > CurrentTerm)
         {
-            this.Monitor<SafetyMonitor>(new SafetyMonitor.NotifyLeaderElected(this.CurrentTerm));
-            this.Send(this.ClusterManager, new ClusterManager.NotifyLeaderUpdate(this.Id, this.CurrentTerm));
+            CurrentTerm = request.Term;
+            VotedFor = null;
+            raise BecomeFollower;
+        }
+    }
 
-            var logIndex = this.Logs.Count;
-            var logTerm = this.GetLogTermForIndex(logIndex);
+    state Leader
+    {
+        entry
+        {
+            var logIndex: int;
+            var logTerm: int;
+            var idx: int;
 
-            this.NextIndex.Clear();
-            this.MatchIndex.Clear();
-            for (int idx = 0; idx < this.Servers.Length; idx++)
+            announce EMonitorInit, (NotifyLeaderElected, CurrentTerm);
+            //monitor<SafetyMonitor>(NotifyLeaderElected, CurrentTerm);
+            send ClusterManager, NotifyLeaderUpdate, this, CurrentTerm;
+
+            logIndex = sizeof(Logs.Count);
+            logTerm = GetLogTermForIndex(logIndex);
+
+            //this.NextIndex.Clear();
+            //this.MatchIndex.Clear();
+            NextIndex = default(map[machine, int]);
+            MatchIndex = default(map[machine, int]);
+            
+            idx = 0;
+            while (idx < sizeof(Servers))
             {
-                if (idx == this.ServerId)
+                if (idx == ServerId)
                     continue;
-                this.NextIndex.Add(this.Servers[idx], logIndex + 1);
-                this.MatchIndex.Add(this.Servers[idx], 0);
+                NextIndex[Servers[idx]] = logIndex + 1;
+                MatchIndex[Servers[idx]] = 0;
+                idx = idx + 1;
             }
 
-            for (int idx = 0; idx < this.Servers.Length; idx++)
+            idx = 0;
+            while (idx < sizeof(Servers))
             {
-                if (idx == this.ServerId)
+                if (idx == ServerId)
                     continue;
-                this.Send(this.Servers[idx], new AppendEntriesRequest(this.CurrentTerm, this.Id,
-                    logIndex, logTerm, new List<Log>(), this.CommitIndex, null));
+                send Servers[idx], AppendEntriesRequest, 
+                    (CurrentTerm, this, logIndex, logTerm, default(seq[Log]), CommitIndex, null);
             }
         }
 
-        void ProcessClientRequest()
+        on Request do (trigger: Request) {
+            ProcessClientRequest(trigger);
+        }
+        on VoteRequest do (request: VoteRequest) {
+            VoteAsLeader(payload);
+        }
+        on VoteResponse do (request: VoteRequest) {
+            RespondVoteAsLeader(request);
+        }
+        on AppendEntriesRequest do (request: AppendEntriesRequest) {
+            AppendEntriesAsLeader(request);
+        }
+        on AppendEntriesResponse do (request: AppendEntriesRequest) {
+            RespondAppendEntriesAsLeader(request);
+        }
+        on ShutDown do ShuttingDown;
+        on BecomeFollower goto Follower;
+        ignore ETimeout, PTimeout;
+    }
+
+    fun ProcessClientRequest(trigger: Request)
+    {
+        var log: Log;
+
+        LastClientRequest = trigger;
+        log = default(Log);
+        log.Term = CurrentTerm;
+        log.Command = LastClientRequest.Command;
+        Logs += (i, log);
+        i = i + 1;
+
+        BroadcastLastClientRequest();
+    }
+
+    fun BroadcastLastClientRequest()
+    {
+        //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " sends append requests | term " +
+            //this.CurrentTerm + " | log " + this.Logs.Count + "\n");
+        var lastLogIndex: int;
+        var idx: int;
+        var prevLogIndex: int;
+        var prevLogTerm: int;
+        var server: machine;
+        var logsAppend: seq[Log];
+
+        lastLogIndex = sizeof(Logs);
+        VotesReceived = 1;
+        while (idx < sizeof(Servers))
         {
-            this.LastClientRequest = this.ReceivedEvent as Client.Request;
+            if (idx == ServerId)
+                continue;
+            server = Servers[idx];
+            if (lastLogIndex < NextIndex[server])
+                continue;
 
-            var log = new Log(this.CurrentTerm, this.LastClientRequest.Command);
-            this.Logs.Add(log);
+           // List<Log> logs = this.Logs.GetRange(this.NextIndex[server] - 1,
+              //  this.Logs.Count - (this.NextIndex[server] - 1));
+            logsAppend = default(seq[Log]);
 
-            this.BroadcastLastClientRequest();
+            idx = NextIndex[server] - 1;
+            while (idx < sizeof(Logs)) {
+                logsAppend += (idx, Logs[idx]);
+                idx = idx + 1;
+            }
+
+            prevLogIndex = NextIndex[server] - 1;
+            prevLogTerm = GetLogTermForIndex(prevLogIndex);
+
+            send server, AppendEntriesRequest, (CurrentTerm, this, prevLogIndex,
+                prevLogTerm, logs, CommitIndex, LastClientRequest.Client);
+        }
+    }
+
+    fun VoteAsLeader(request: VoteRequest)
+    {
+        if (request.Term > CurrentTerm)
+        {
+            CurrentTerm = request.Term;
+            VotedFor = null;
+
+            RedirectLastClientRequestToClusterManager();
+            Vote(request);
+
+            raise BecomeFollower;
+        }
+        else
+        {
+            Vote(request);
+        }
+    }
+
+    fun RespondVoteAsLeader(request: VoteRequest)
+    {
+        if (request.Term > CurrentTerm)
+        {
+            CurrentTerm = request.Term;
+            VotedFor = null;
+
+            RedirectLastClientRequestToClusterManager();
+            raise BecomeFollower;
+        }
+    }
+
+    fun AppendEntriesAsLeader(request: AppendEntriesRequest)
+    {
+        if (request.Term > CurrentTerm)
+        {
+            CurrentTerm = request.Term;
+            VotedFor = null;
+
+            RedirectLastClientRequestToClusterManager();
+            AppendEntries(request);
+
+            raise BecomeFollower;
+        }
+    }
+
+    fun RespondAppendEntriesAsLeader(request: AppendEntriesResponse)
+    {
+        var commitIndex: int;
+        var logsAppend: seq[Log];
+        var prevLogIndex: int;
+        var prevLogTerm: int; 
+
+        if (request.Term > CurrentTerm)
+        {
+            CurrentTerm = request.Term;
+            VotedFor = null;
+
+            RedirectLastClientRequestToClusterManager();
+            raise BecomeFollower;
+        }
+        else if (request.Term != CurrentTerm)
+        {
         }
 
-        void BroadcastLastClientRequest()
+        else if (request.Success)
         {
-            this.Logger.WriteLine("\n [Leader] " + this.ServerId + " sends append requests | term " +
-                this.CurrentTerm + " | log " + this.Logs.Count + "\n");
+            NextIndex[request.Server] = sizeof(Logs) + 1;
+            MatchIndex[request.Server] = sizeof(Logs);
 
-            var lastLogIndex = this.Logs.Count;
-
-            this.VotesReceived = 1;
-            for (int idx = 0; idx < this.Servers.Length; idx++)
+            VotesReceived = VotesReceived + 1;
+            if (request.ReceiverEndpoint != null &&
+                VotesReceived >= (Servers.Count / 2) + 1)
             {
-                if (idx == this.ServerId)
-                    continue;
+                //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
+                  //  " | append votes " + this.VotesReceived + " | append success\n");
 
-                var server = this.Servers[idx];
-                if (lastLogIndex < this.NextIndex[server])
-                    continue;
-
-                var logs = this.Logs.GetRange(this.NextIndex[server] - 1,
-                    this.Logs.Count - (this.NextIndex[server] - 1));
-
-                var prevLogIndex = this.NextIndex[server] - 1;
-                var prevLogTerm = this.GetLogTermForIndex(prevLogIndex);
-
-                this.Send(server, new AppendEntriesRequest(this.CurrentTerm, this.Id, prevLogIndex,
-                    prevLogTerm, logs, this.CommitIndex, this.LastClientRequest.Client));
-            }
-        }
-
-        void VoteAsLeader()
-        {
-            var request = this.ReceivedEvent as VoteRequest;
-
-            if (request.Term > this.CurrentTerm)
-            {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-
-                this.RedirectLastClientRequestToClusterManager();
-                this.Vote(this.ReceivedEvent as VoteRequest);
-
-                this.Raise(new BecomeFollower());
-            }
-            else
-            {
-                this.Vote(this.ReceivedEvent as VoteRequest);
-            }
-        }
-
-        void RespondVoteAsLeader()
-        {
-            var request = this.ReceivedEvent as VoteResponse;
-            if (request.Term > this.CurrentTerm)
-            {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-
-                this.RedirectLastClientRequestToClusterManager();
-                this.Raise(new BecomeFollower());
-            }
-        }
-
-        void AppendEntriesAsLeader()
-        {
-            var request = this.ReceivedEvent as AppendEntriesRequest;
-            if (request.Term > this.CurrentTerm)
-            {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-
-                this.RedirectLastClientRequestToClusterManager();
-                this.AppendEntries(this.ReceivedEvent as AppendEntriesRequest);
-
-                this.Raise(new BecomeFollower());
-            }
-        }
-
-        void RespondAppendEntriesAsLeader()
-        {
-            var request = this.ReceivedEvent as AppendEntriesResponse;
-            if (request.Term > this.CurrentTerm)
-            {
-                this.CurrentTerm = request.Term;
-                this.VotedFor = null;
-
-                this.RedirectLastClientRequestToClusterManager();
-                this.Raise(new BecomeFollower());
-                return;
-            }
-            else if (request.Term != this.CurrentTerm)
-            {
-                return;
-            }
-
-            if (request.Success)
-            {
-                this.NextIndex[request.Server] = this.Logs.Count + 1;
-                this.MatchIndex[request.Server] = this.Logs.Count;
-
-                this.VotesReceived++;
-                if (request.ReceiverEndpoint != null &&
-                    this.VotesReceived >= (this.Servers.Length / 2) + 1)
+                commitIndex = MatchIndex[request.Server];
+                if (commitIndex > CommitIndex &&
+                    Logs[commitIndex - 1].Term == CurrentTerm)
                 {
-                    this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
-                        " | append votes " + this.VotesReceived + " | append success\n");
+                    CommitIndex = commitIndex;
 
-                    var commitIndex = this.MatchIndex[request.Server];
-                    if (commitIndex > this.CommitIndex &&
-                        this.Logs[commitIndex - 1].Term == this.CurrentTerm)
+                   // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | command " + this.Logs[commitIndex - 1].Command + "\n");
+                }
+
+                VotesReceived = 0;
+                LastClientRequest = null;
+
+                send request.ReceiverEndpoint, Response;
+            }
+        }
+        else
+        {
+            if (NextIndex[request.Server] > 1)
+            {
+                NextIndex[request.Server] = NextIndex[request.Server] - 1;
+            }
+
+//            List<Log> logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1, this.Logs.Count - (this.NextIndex[request.Server] - 1));
+            logsAppend = default(seq[Log]);
+            idx = NextIndex[request.server] - 1;
+            while (idx < sizeof(Logs)) {
+                logsAppend += (idx, Logs[idx]);
+                idx = idx + 1;
+            }
+
+            prevLogIndex = NextIndex[request.Server] - 1;
+            prevLogTerm = GetLogTermForIndex(prevLogIndex);
+
+            //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
+
+            send request.Server, AppendEntriesRequest, (CurrentTerm, this, prevLogIndex,
+                prevLogTerm, logs, CommitIndex, request.ReceiverEndpoint);
+        }
+    }
+
+    fun Vote(request: VoteRequest)
+    {
+        var lastLogIndex: int;
+        var lastLogTerm: int;
+        lastLogIndex = sizeof(Logs);
+        lastLogTerm = GetLogTermForIndex(lastLogIndex);
+
+        if (request.Term < CurrentTerm ||
+            (VotedFor != null && VotedFor != request.CandidateId) ||
+            lastLogIndex > request.LastLogIndex ||
+            lastLogTerm > request.LastLogTerm)
+        {
+            //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
+              //  " | log " + this.Logs.Count + " | vote false\n");
+            send request.CandidateId, VoteResponse, (CurrentTerm, false);
+        }
+        else
+        {
+            //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
+               // " | log " + this.Logs.Count + " | vote true\n");
+
+            VotedFor = request.CandidateId;
+            LeaderId = null;
+
+            send request.CandidateId, VoteResponse, (CurrentTerm, true);
+        }
+    }
+
+    fun AppendEntries(request: AppendEntriesRequest)
+    {
+        var currentIndex: int;
+        var idx: int;
+        var decIdx: int;
+        var logEntry: Log;
+
+        if (request.Term < CurrentTerm)
+        {
+            //print "\n [Server] " + ServerId + " | term " + CurrentTerm + " | log " +
+              //  this.Logs.Count + " | last applied: " + this.LastApplied + " | append false (< term)\n";
+
+            send request.LeaderId, AppendEntriesResponse, (CurrentTerm, false, this, request.ReceiverEndpoint);
+        }
+        else
+        {
+            if (request.PrevLogIndex > 0 &&
+                (sizeof(Logs) < request.PrevLogIndex ||
+                Logs[request.PrevLogIndex - 1].Term != request.PrevLogTerm))
+            {
+                //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
+                  //  this.Logs.Count + " | last applied: " + this.LastApplied + " | append false (not in log)\n");
+
+                send request.LeaderId, AppendEntriesResponse, (CurrentTerm, false, this, request.ReceiverEndpoint);
+            }
+            else
+            {
+                if (sizeof(request.Entries) > 0)
+                {
+                    currentIndex = request.PrevLogIndex + 1;
+                    idx = 0;
+                    while (idx < sizeof(request.Entries))
                     {
-                        this.CommitIndex = commitIndex;
-
-                        this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
-                            " | log " + this.Logs.Count + " | command " + this.Logs[commitIndex - 1].Command + "\n");
-                    }
-
-                    this.VotesReceived = 0;
-                    this.LastClientRequest = null;
-
-                    this.Send(request.ReceiverEndpoint, new Client.Response());
-                }
-            }
-            else
-            {
-                if (this.NextIndex[request.Server] > 1)
-                {
-                    this.NextIndex[request.Server] = this.NextIndex[request.Server] - 1;
-                }
-
-                var logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1,
-                    this.Logs.Count - (this.NextIndex[request.Server] - 1));
-
-                var prevLogIndex = this.NextIndex[request.Server] - 1;
-                var prevLogTerm = this.GetLogTermForIndex(prevLogIndex);
-
-                this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
-                    this.Logs.Count + " | append votes " + this.VotesReceived +
-                    " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
-
-                this.Send(request.Server, new AppendEntriesRequest(this.CurrentTerm, this.Id, prevLogIndex,
-                    prevLogTerm, logs, this.CommitIndex, request.ReceiverEndpoint));
-            }
-        }
-
-        #endregion
-
-        #region general methods
-
-        /// <summary>
-        /// Processes the given vote request.
-        /// </summary>
-        /// <param name="request">VoteRequest</param>
-        void Vote(VoteRequest request)
-        {
-            var lastLogIndex = this.Logs.Count;
-            var lastLogTerm = this.GetLogTermForIndex(lastLogIndex);
-
-            if (request.Term < this.CurrentTerm ||
-                (this.VotedFor != null && this.VotedFor != request.CandidateId) ||
-                lastLogIndex > request.LastLogIndex ||
-                lastLogTerm > request.LastLogTerm)
-            {
-                this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
-                    " | log " + this.Logs.Count + " | vote false\n");
-                this.Send(request.CandidateId, new VoteResponse(this.CurrentTerm, false));
-            }
-            else
-            {
-                this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
-                    " | log " + this.Logs.Count + " | vote true\n");
-
-                this.VotedFor = request.CandidateId;
-                this.LeaderId = null;
-
-                this.Send(request.CandidateId, new VoteResponse(this.CurrentTerm, true));
-            }
-        }
-
-        /// <summary>
-        /// Processes the given append entries request.
-        /// </summary>
-        /// <param name="request">AppendEntriesRequest</param>
-        void AppendEntries(AppendEntriesRequest request)
-        {
-            if (request.Term < this.CurrentTerm)
-            {
-                this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
-                    this.Logs.Count + " | last applied: " + this.LastApplied + " | append false (< term)\n");
-
-                this.Send(request.LeaderId, new AppendEntriesResponse(this.CurrentTerm, false,
-                    this.Id, request.ReceiverEndpoint));
-            }
-            else
-            {
-                if (request.PrevLogIndex > 0 &&
-                    (this.Logs.Count < request.PrevLogIndex ||
-                    this.Logs[request.PrevLogIndex - 1].Term != request.PrevLogTerm))
-                {
-                    this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
-                        this.Logs.Count + " | last applied: " + this.LastApplied + " | append false (not in log)\n");
-
-                    this.Send(request.LeaderId, new AppendEntriesResponse(this.CurrentTerm,
-                        false, this.Id, request.ReceiverEndpoint));
-                }
-                else
-                {
-                    if (request.Entries.Count > 0)
-                    {
-                        var currentIndex = request.PrevLogIndex + 1;
-                        foreach (var entry in request.Entries)
+                        logEntry = request.Entries[idx];
+                        if (sizeof(Logs) < currentIndex)
                         {
-                            if (this.Logs.Count < currentIndex)
-                            {
-                                this.Logs.Add(entry);
-                            }
-                            else if (this.Logs[currentIndex - 1].Term != entry.Term)
-                            {
-                                this.Logs.RemoveRange(currentIndex - 1, this.Logs.Count - (currentIndex - 1));
-                                this.Logs.Add(entry);
-                            }
-
-                            currentIndex++;
+                            Logs += (idx, logEntry);
                         }
+                        else if (Logs[currentIndex - 1].Term != logEntry.Term)
+                        {
+                            //this.Logs.RemoveRange(currentIndex - 1, this.Logs.Count - (currentIndex - 1));
+                            decIdx = sizeof(Logs) - 1;
+                            while (decIdx >= currentIndex-1) {
+                                Logs -= decIdx;
+                                decIdx = decIdx - 1;
+                            }
+                            Logs += (decIdx, logEntry);
+                        }
+                        idx = idx + 1;
+                        currentIndex = currentIndex + 1;
                     }
-
-                    if (request.LeaderCommit > this.CommitIndex &&
-                        this.Logs.Count < request.LeaderCommit)
-                    {
-                        this.CommitIndex = this.Logs.Count;
-                    }
-                    else if (request.LeaderCommit > this.CommitIndex)
-                    {
-                        this.CommitIndex = request.LeaderCommit;
-                    }
-
-                    if (this.CommitIndex > this.LastApplied)
-                    {
-                        this.LastApplied++;
-                    }
-
-                    this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
-                        this.Logs.Count + " | entries received " + request.Entries.Count + " | last applied " +
-                        this.LastApplied + " | append true\n");
-
-                    this.LeaderId = request.LeaderId;
-                    this.Send(request.LeaderId, new AppendEntriesResponse(this.CurrentTerm,
-                        true, this.Id, request.ReceiverEndpoint));
                 }
+
+                if (request.LeaderCommit > CommitIndex &&
+                    sizeof(Logs) < request.LeaderCommit)
+                {
+                    CommitIndex = sizeof(Logs);
+                }
+                else if (request.LeaderCommit > CommitIndex)
+                {
+                    CommitIndex = request.LeaderCommit;
+                }
+
+                if (CommitIndex > LastApplied)
+                {
+                    LastApplied = LastApplied + 1;
+                }
+
+                //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
+                  //  this.Logs.Count + " | entries received " + request.Entries.Count + " | last applied " +
+                    //this.LastApplied + " | append true\n");
+
+                LeaderId = request.LeaderId;
+                send request.LeaderId, AppendEntriesResponse, (CurrentTerm, true, this, request.ReceiverEndpoint);
             }
         }
+    }
 
-        void RedirectLastClientRequestToClusterManager()
+    fun RedirectLastClientRequestToClusterManager()
+    {
+        if (LastClientRequest != null)
         {
-            if (this.LastClientRequest != null)
-            {
-                this.Send(this.ClusterManager, this.LastClientRequest);
-            }
+            send ClusterManager, Request, (LastClientRequest.Client, LastClientRequest.Command);
+        }
+    }
+
+    fun GetLogTermForIndex(logIndex: int) : int
+    {
+        var logTerm: int;
+        logTerm = 0;
+        if (logIndex > 0)
+        {
+            logTerm = Logs[logIndex - 1].Term;
         }
 
-        /// <summary>
-        /// Returns the log term for the given log index.
-        /// </summary>
-        /// <param name="logIndex">Index</param>
-        /// <returns>Term</returns>
-        int GetLogTermForIndex(int logIndex)
-        {
-            var logTerm = 0;
-            if (logIndex > 0)
-            {
-                logTerm = this.Logs[logIndex - 1].Term;
-            }
+        return logTerm;
+    }
 
-            return logTerm;
-        }
+    fun ShuttingDown()
+    {
+        send ElectionTimer, Halt;
+        send PeriodicTimer, Halt;
 
-        void ShuttingDown()
-        {
-            this.Send(this.ElectionTimer, new Halt());
-            this.Send(this.PeriodicTimer, new Halt());
-
-            this.Raise(new Halt());
-        }
-
-        #endregion
+        raise Halt;
     }
 }
+// }
+

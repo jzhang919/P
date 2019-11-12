@@ -3,63 +3,87 @@
 // Licensed under the MIT License (MIT). See License.txt in the repo root for license information.
 // ------------------------------------------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+// using System;
+// using System.Collections.Generic;
+// using System.Linq;
+// using System.Text;
+// using System.Threading.Tasks;
 
-namespace Raft
+// namespace Raft
+// {
+machine Client
 {
-    machine Client
+    // machine Cluster;
+    // int LatestCommand;
+    // int Counter;
+    var Cluster: machine;
+    var LatestCommand: int;
+    var Counter: int;
+
+
+    start state Init
     {
-        machine Cluster;
-        int LatestCommand;
-        int Counter;
-
-        start state Init
+        entry (payload: machine)
         {
-            entry
-            {
-                this.LatestCommand = -1;
-                this.Counter = 0;
-            }
+            LatestCommand = -1;
+            Counter = 0;
+        }
+        on CConfigureEvent do (payload: (Cluster: machine)) {
+            Configure(payload);
+        } 
+        on LocalEvent goto PumpRequest;
+    }
 
-            on CConfigureEvent do Configure;
-            on LocalEvent goto PumpRequest;
+    fun Configure(payload: (Cluster: machine))
+    {
+        Cluster = payload.Cluster;
+        raise LocalEvent;
+    }
+
+    state PumpRequest
+    { 
+        entry
+        {
+            LatestCommand = ChooseVal();
+            Counter = Counter + 1;
+            //Logger.WriteLine("\n [Client] new request " + this.LatestCommand + "\n");
+            send Cluster, Request, (this, LatestCommand);
+        }    
+
+        on Response do {
+            ProcessResponse();
+        }
+        on LocalEvent goto PumpRequest;
+    }
+
+
+    fun ChooseVal() : int {
+        // return a random value between 0 - 100
+        var index : int;
+        index = 0;
+        while(index < 100)
+        {
+            if($)
+            {
+                return index;
+            }
+            index = index + 1;
         }
 
-        void Configure()
+        return index;
+    }
+
+    fun ProcessResponse()
+    {
+        if (Counter == 3)
         {
-            this.Cluster = (trigger as CConfigureEvent).Cluster;
-            raise(LocalEvent);
+            send Cluster, ShutDown;
+            raise Halt;
         }
-
-        state PumpRequest
+        else
         {
-            entry
-            {
-                this.LatestCommand = new Random().Next(100);
-                this.Counter++;
-                this.Logger.WriteLine("\n [Client] new request " + this.LatestCommand + "\n");
-                send(this.Cluster, Request, this.Id, this.LatestCommand);
-            }
-
-            on Response do ProcessResponse;
-            on LocalEvent goto PumpRequest;
-        }
-
-        void ProcessResponse()
-        {
-            if (this.Counter == 3)
-            {
-                send(this.Cluster, ShutDown);
-                raise(Halt);
-            }
-            else
-            {
-                raise(LocalEvent);
-            }
+            raise LocalEvent;
         }
     }
 }
+

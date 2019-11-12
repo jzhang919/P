@@ -3,42 +3,45 @@
 // Licensed under the MIT License (MIT). See License.txt in the repo root for license information.
 // ------------------------------------------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+// using System;
+// using System.Collections.Generic;
+// using System.Linq;
+// using System.Text;
+// using System.Threading.Tasks;
 
-namespace Raft
-{
-    #region events
+// namespace Raft
+// {
+// #region events
 
-	internal event NotifyLeaderUpdate (Leader: machine, Term: int);
-	internal event RedirectRequest (Req: Request);
-	internal event ShutDown;
-	internal event LocalEvent;
-	internal event CConfigureEvent (Cluster: machine);
-	internal event Request (Client: machine, Command: int);
-	internal event Response;
-	internal event NotifyLeaderElected (Term: int);
-	internal event SConfigureEvent (Id: int, Servers: List<machine>, ClusterManager: machine);
-	internal event VoteRequest(Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int);
-	internal event VoteResponse (Term: int, VoteGranted: bool);
-	internal event AppendEntriesRequest (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: List<Log>, LeaderCommit: int, ReceiverEndpoint: machine);
-	internal event AppendEntriesResponse (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine);
-	internal event BecomeFollower;
-	internal event BecomeCandidate;
-	internal event BecomeLeader;
-	internal event EConfigureEvent (Target: machine);
-	internal event EStartTimer;
-    internal event ECancelTimer;
-    internal event ETimeout;
-    internal event ETickEvent;
-	internal event PConfigureEvent (Target: machine);
-	internal event PStartTimer;
-    internal event PCancelTimer;
-    internal event PTimeout;
-    internal event PTickEvent;
+event NotifyLeaderUpdate: (Leader: machine, Term: int);
+event Request: (Client: machine, Command: int);
+event RedirectRequest: (Req: (Client: machine, Command: int));
+event ShutDown;
+event LocalEvent;
+event CConfigureEvent: (Cluster: machine);
+event Response;
+event NotifyLeaderElected: (Term: int);
+event SConfigureEvent: (Id: int, Servers: seq[machine], ClusterManager: machine);
+event VoteRequest: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int);
+event VoteResponse: (Term: int, VoteGranted: bool);
+event AppendEntriesRequest: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine);
+event AppendEntriesResponse: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine);
+event BecomeFollower;
+event BecomeCandidate;
+event BecomeLeader;
+event EConfigureEvent: (Target: machine);
+event EStartTimer;
+event ECancelTimer;
+event ETimeout;
+event ETickEvent;
+event PConfigureEvent: (Target: machine);
+event PStartTimer;
+event PCancelTimer;
+event PTimeout;
+event PTickEvent;
 
-	#endregion
-}
+event EMonitorInit;
+
+type Log = (Term: int, Command: int);
+// #endregion
+// }

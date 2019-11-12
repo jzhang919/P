@@ -3,42 +3,48 @@
 // Licensed under the MIT License (MIT). See License.txt in the repo root for license information.
 // ------------------------------------------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+// using System;
+// using System.Collections.Generic;
+// using System.Linq;
+// using System.Text;
+// using System.Threading.Tasks;
 
-namespace Raft
+// namespace Raft
+// {
+spec SafetyMonitor observes NotifyLeaderElected
 {
-    monitor SafetyMonitor
+	//unused: int CurrentTerm;
+//    HashSet<int> TermsWithLeader;
+	var TermsWithLeader: map[int, bool];
+
+	start state Init
+	{
+		entry
+		{
+			//this.CurrentTerm = -1;
+			TermsWithLeader = default(map[int, bool]);
+			raise LocalEvent;
+		}
+
+		on LocalEvent goto Monitoring;
+	}
+
+	state Monitoring
+	{
+		on NotifyLeaderElected do (payload: NotifyLeaderElected) {
+			ProcessLeaderElected(payload);
+		}
+	}
+
+	fun ProcessLeaderElected(payload: NotifyLeaderElected)
     {
-		//unused: int CurrentTerm;
-        HashSet<int> TermsWithLeader;
-
-		start state Init
-		{
-			entry
-			{
-				//this.CurrentTerm = -1;
-				this.TermsWithLeader = new HashSet<int>();
-				raise(LocalEvent);
-			}
-
-			on LocalEvent goto Monitoring;
-		}
-
-		state Monitoring
-		{
-			on NotifyLeaderElected do ProcessLeaderElected;
-		}
-
-		void ProcessLeaderElected()
-        {
-            var term = (trigger as NotifyLeaderElected).Term;
-
-            assert(!this.TermsWithLeader.Contains(term), "Detected more than one leader in term " + term);
-            this.TermsWithLeader.Add(term);
+        var term: int;
+        term = payload.Term;
+        if (TermsWithLeader[term]){
+        	print "Detected more than one leader in term {0}", term;
         }
+        assert(!TermsWithLeader[term]);
+        TermsWithLeader[term] = true;
     }
 }
+// }
