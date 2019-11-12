@@ -57,7 +57,7 @@ machine ClusterManager
 			idx = 0;
 			while(idx < NumberOfServers)
 			{
-				send Servers[idx], SConfigureEvent, (idx, Servers, this);
+				send Servers[idx], SConfigureEvent, (Id=idx, Servers=Servers, ClusterManager=this);
 				idx = idx + 1;
 			}
 
@@ -71,7 +71,7 @@ machine ClusterManager
 	state Unavailable
 	{
 		on NotifyLeaderUpdate do (payload: (Leader: machine, Term: int)) {
-			UpdateLeader(payload.Leader);
+			UpdateLeader(payload);
         	raise LocalEvent;
 		}
 		on ShutDown do ShuttingDown;
@@ -98,13 +98,13 @@ machine ClusterManager
         	idx = idx + 1;
         }
 
-        raise Halt;
+        raise halt;
 	}
 
 	state Available
 	{
 		on Request do (payload: (Client: machine, Command: int)){
-			send Leader, Request, (payload.Client, payload.Command);
+			send Leader, Request, (Client=payload.Client, Command=payload.Command);
 		}
 
 		//TODO: How to address payloads that are events themselves

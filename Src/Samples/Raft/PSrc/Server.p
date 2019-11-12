@@ -28,7 +28,7 @@ machine Server
     var NextIndex: map[machine, int];
     var MatchIndex: map[machine, int];
     var VotesReceived: int;
-    var LastClientRequest: Request;
+    var LastClientRequest: (Client: machine, Command: int);
     var i: int;
 
     start state Init
@@ -37,8 +37,8 @@ machine Server
         {
             i = 0;
             CurrentTerm = 0;
-            LeaderId = null;
-            VotedFor = null;
+            LeaderId = default(machine);
+            VotedFor = default(machine);
             Logs = default(seq[Log]);
             CommitIndex = 0;
             LastApplied = 0;
@@ -67,13 +67,13 @@ machine Server
     {
         entry
         {
-            LeaderId = null;
+            LeaderId = default(machine);
             VotesReceived = 0;
 
             send ElectionTimer, EStartTimer;
         }
 
-        on Request do (payload: (Req: Request)) {
+        on Request do (payload: (Client: machine, Command: int)) {
             if (LeaderId != null)
             {
                 send LeaderId, Request, payload.Client, payload.Command;
@@ -92,14 +92,15 @@ machine Server
 
             Vote(payload);
         }
-        on VoteResponse do (request: VoteResponse) {
+        on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
                 VotedFor = null;
             }
         }
-        on AppendEntriesRequest do (request: AppendEntriesRequest){
+        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
+            PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)){
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -108,7 +109,8 @@ machine Server
 
             AppendEntries(request);
         }
-        on AppendEntriesResponse do (request: AppendEntriesResponse){
+        on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine,
+         ReceiverEndpoint: machine)){
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -118,7 +120,9 @@ machine Server
         on ETimeout do {
             raise BecomeCandidate;
         }
-        on ShutDown do ShuttingDown;
+        on ShutDown do { 
+            ShuttingDown();
+        }
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
         ignore PTimeout;
@@ -140,8 +144,17 @@ machine Server
             BroadcastVoteRequests();
         }
 
-        on Request do RedirectClientRequest;
-        on VoteRequest do (request: VoteRequest){
+        on Request do (payload: (Client: machine, Command: int)) {
+            if (LeaderId != null)
+            {
+                send LeaderId, Request, payload.Client, payload.Command;
+            }
+            else
+            {
+                send ClusterManager, RedirectRequest, payload;
+            }
+        }
+        on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)){
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -154,7 +167,7 @@ machine Server
                 Vote(request);
             }
         }
-        on VoteResponse do (request: VoteResponse) {
+        on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -177,7 +190,8 @@ machine Server
                 }
             }
         }
-        on AppendEntriesRequest do (request: AppendEntriesRequest) {
+        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int,
+         Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)) {
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -190,7 +204,7 @@ machine Server
                 AppendEntries(request);
             }
         }
-        on AppendEntriesResponse do (request: AppendEntriesResponse) {
+        on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
             RespondAppendEntriesAsCandidate(request);
         }
         on ETimeout do {
@@ -224,7 +238,7 @@ machine Server
         }
     }
 
-    fun RespondAppendEntriesAsCandidate(request: AppendEntriesResponse)
+    fun RespondAppendEntriesAsCandidate(request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine))
     {
         if (request.Term > CurrentTerm)
         {
@@ -274,19 +288,20 @@ machine Server
             }
         }
 
-        on Request do (trigger: Request) {
+        on Request do (trigger: (Client: machine, Command: int)) {
             ProcessClientRequest(trigger);
         }
-        on VoteRequest do (request: VoteRequest) {
+        on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
             VoteAsLeader(payload);
         }
-        on VoteResponse do (request: VoteRequest) {
+        on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
             RespondVoteAsLeader(request);
         }
-        on AppendEntriesRequest do (request: AppendEntriesRequest) {
+        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
+            PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)) {
             AppendEntriesAsLeader(request);
         }
-        on AppendEntriesResponse do (request: AppendEntriesRequest) {
+        on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
             RespondAppendEntriesAsLeader(request);
         }
         on ShutDown do ShuttingDown;
@@ -294,7 +309,7 @@ machine Server
         ignore ETimeout, PTimeout;
     }
 
-    fun ProcessClientRequest(trigger: Request)
+    fun ProcessClientRequest(trigger: (Client: machine, Command: int))
     {
         var log: Log;
 
@@ -347,7 +362,7 @@ machine Server
         }
     }
 
-    fun VoteAsLeader(request: VoteRequest)
+    fun VoteAsLeader(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
     {
         if (request.Term > CurrentTerm)
         {
@@ -365,7 +380,7 @@ machine Server
         }
     }
 
-    fun RespondVoteAsLeader(request: VoteRequest)
+    fun RespondVoteAsLeader(request: (Term: int, VoteGranted: bool))
     {
         if (request.Term > CurrentTerm)
         {
@@ -377,7 +392,7 @@ machine Server
         }
     }
 
-    fun AppendEntriesAsLeader(request: AppendEntriesRequest)
+    fun AppendEntriesAsLeader(request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine))
     {
         if (request.Term > CurrentTerm)
         {
@@ -391,7 +406,7 @@ machine Server
         }
     }
 
-    fun RespondAppendEntriesAsLeader(request: AppendEntriesResponse)
+    fun RespondAppendEntriesAsLeader(request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine))
     {
         var commitIndex: int;
         var logsAppend: seq[Log];
@@ -462,7 +477,7 @@ machine Server
         }
     }
 
-    fun Vote(request: VoteRequest)
+    fun Vote(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
     {
         var lastLogIndex: int;
         var lastLogTerm: int;
@@ -490,7 +505,7 @@ machine Server
         }
     }
 
-    fun AppendEntries(request: AppendEntriesRequest)
+    fun AppendEntries(request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine))
     {
         var currentIndex: int;
         var idx: int;

@@ -28,15 +28,15 @@ machine Client
             LatestCommand = -1;
             Counter = 0;
         }
-        on CConfigureEvent do (payload: (Cluster: machine)) {
+        on CConfigureEvent do (payload: machine) {
             Configure(payload);
         } 
         on LocalEvent goto PumpRequest;
     }
 
-    fun Configure(payload: (Cluster: machine))
+    fun Configure(payload: machine)
     {
-        Cluster = payload.Cluster;
+        Cluster = payload;
         raise LocalEvent;
     }
 
@@ -47,7 +47,7 @@ machine Client
             LatestCommand = ChooseVal();
             Counter = Counter + 1;
             //Logger.WriteLine("\n [Client] new request " + this.LatestCommand + "\n");
-            send Cluster, Request, (this, LatestCommand);
+            send Cluster, Request, (Client=this, Command=LatestCommand);
         }    
 
         on Response do {
@@ -78,7 +78,7 @@ machine Client
         if (Counter == 3)
         {
             send Cluster, ShutDown;
-            raise Halt;
+            raise halt;
         }
         else
         {

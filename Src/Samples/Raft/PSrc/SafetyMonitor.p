@@ -31,12 +31,12 @@ spec SafetyMonitor observes NotifyLeaderElected
 
 	state Monitoring
 	{
-		on NotifyLeaderElected do (payload: NotifyLeaderElected) {
+		on NotifyLeaderElected do (payload: (Term: int)) {
 			ProcessLeaderElected(payload);
 		}
 	}
 
-	fun ProcessLeaderElected(payload: NotifyLeaderElected)
+	fun ProcessLeaderElected(payload: (Term: int))
     {
         var term: int;
         term = payload.Term;
