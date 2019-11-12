@@ -84,10 +84,10 @@ machine Server
             }
         }
         on VoteRequest do (payload: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
-            if (request.Term > CurrentTerm)
+            if (payload.Term > CurrentTerm)
             {
-                CurrentTerm = request.Term;
-                VotedFor = null;
+                CurrentTerm = payload.Term;
+                VotedFor = default(machine);
             }
 
             Vote(payload);
@@ -96,7 +96,7 @@ machine Server
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
-                VotedFor = null;
+                VotedFor = default(machine);
             }
         }
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
@@ -104,7 +104,7 @@ machine Server
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
-                VotedFor = null;
+                VotedFor = default(machine);
             }
 
             AppendEntries(request);
@@ -114,7 +114,7 @@ machine Server
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
-                VotedFor = null;
+                VotedFor = default(machine);
             }
         }
         on ETimeout do {
@@ -158,7 +158,7 @@ machine Server
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
-                VotedFor = null;
+                VotedFor = default(machine);
                 Vote(request);
                 raise BecomeFollower;
             }
@@ -171,7 +171,7 @@ machine Server
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
-                VotedFor = null;
+                VotedFor = default(machine);
                 raise BecomeFollower;
             }
             else if (request.Term != CurrentTerm)
@@ -195,7 +195,7 @@ machine Server
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
-                VotedFor = null;
+                VotedFor = default(machine);
                 AppendEntries(request);
                 raise BecomeFollower;
             }
@@ -233,7 +233,7 @@ machine Server
             lastLogIndex = sizeof(Logs);
             lastLogTerm = GetLogTermForIndex(lastLogIndex);
 
-            send Servers[idx], VoteRequest, (CurrentTerm, this, lastLogIndex, lastLogTerm);
+            send Servers[idx], VoteRequest, (Term=CurrentTerm, CandidateId=this, LastLogIndex=lastLogIndex, LastLogTerm=lastLogTerm);
             idx = idx + 1;
         }
     }
@@ -243,7 +243,7 @@ machine Server
         if (request.Term > CurrentTerm)
         {
             CurrentTerm = request.Term;
-            VotedFor = null;
+            VotedFor = default(machine);
             raise BecomeFollower;
         }
     }
@@ -260,7 +260,7 @@ machine Server
             //monitor<SafetyMonitor>(NotifyLeaderElected, CurrentTerm);
             send ClusterManager, NotifyLeaderUpdate, this, CurrentTerm;
 
-            logIndex = sizeof(Logs.Count);
+            logIndex = sizeof(Logs);
             logTerm = GetLogTermForIndex(logIndex);
 
             //this.NextIndex.Clear();
@@ -284,15 +284,15 @@ machine Server
                 if (idx == ServerId)
                     continue;
                 send Servers[idx], AppendEntriesRequest, 
-                    (CurrentTerm, this, logIndex, logTerm, default(seq[Log]), CommitIndex, null);
+                    (Term=CurrentTerm, LeaderId=this, PrevLogIndex=logIndex, PrevLogTerm=logTerm, Entries=default(seq[Log]), LeaderCommit=CommitIndex, ReceiverEndpoint=default(machine));
             }
         }
 
-        on Request do (trigger: (Client: machine, Command: int)) {
-            ProcessClientRequest(trigger);
+        on Request do (request: (Client: machine, Command: int)) {
+            ProcessClientRequest(request);
         }
         on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
-            VoteAsLeader(payload);
+            VoteAsLeader(request);
         }
         on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
             RespondVoteAsLeader(request);
@@ -357,8 +357,8 @@ machine Server
             prevLogIndex = NextIndex[server] - 1;
             prevLogTerm = GetLogTermForIndex(prevLogIndex);
 
-            send server, AppendEntriesRequest, (CurrentTerm, this, prevLogIndex,
-                prevLogTerm, logs, CommitIndex, LastClientRequest.Client);
+            send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
+                PrevLogTerm=prevLogTerm, Entries=Logs, LeaderCommit=CommitIndex, ReceiverEndpoint=LastClientRequest.Client);
         }
     }
 
@@ -367,7 +367,7 @@ machine Server
         if (request.Term > CurrentTerm)
         {
             CurrentTerm = request.Term;
-            VotedFor = null;
+            VotedFor = default(machine);
 
             RedirectLastClientRequestToClusterManager();
             Vote(request);
@@ -385,7 +385,7 @@ machine Server
         if (request.Term > CurrentTerm)
         {
             CurrentTerm = request.Term;
-            VotedFor = null;
+            VotedFor = default(machine);
 
             RedirectLastClientRequestToClusterManager();
             raise BecomeFollower;
@@ -397,7 +397,7 @@ machine Server
         if (request.Term > CurrentTerm)
         {
             CurrentTerm = request.Term;
-            VotedFor = null;
+            VotedFor = default(machine);
 
             RedirectLastClientRequestToClusterManager();
             AppendEntries(request);
@@ -412,11 +412,11 @@ machine Server
         var logsAppend: seq[Log];
         var prevLogIndex: int;
         var prevLogTerm: int; 
-
+        var idx: int;
         if (request.Term > CurrentTerm)
         {
             CurrentTerm = request.Term;
-            VotedFor = null;
+            VotedFor = default(machine);
 
             RedirectLastClientRequestToClusterManager();
             raise BecomeFollower;
@@ -432,7 +432,7 @@ machine Server
 
             VotesReceived = VotesReceived + 1;
             if (request.ReceiverEndpoint != null &&
-                VotesReceived >= (Servers.Count / 2) + 1)
+                VotesReceived >= (sizeof(Servers) / 2) + 1)
             {
                 //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
                   //  " | append votes " + this.VotesReceived + " | append success\n");
@@ -447,7 +447,7 @@ machine Server
                 }
 
                 VotesReceived = 0;
-                LastClientRequest = null;
+                LastClientRequest = (Client=default(machine), Command=default(int));
 
                 send request.ReceiverEndpoint, Response;
             }
@@ -461,7 +461,7 @@ machine Server
 
 //            List<Log> logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1, this.Logs.Count - (this.NextIndex[request.Server] - 1));
             logsAppend = default(seq[Log]);
-            idx = NextIndex[request.server] - 1;
+            idx = NextIndex[request.Server] - 1;
             while (idx < sizeof(Logs)) {
                 logsAppend += (idx, Logs[idx]);
                 idx = idx + 1;
@@ -472,8 +472,8 @@ machine Server
 
             //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
 
-            send request.Server, AppendEntriesRequest, (CurrentTerm, this, prevLogIndex,
-                prevLogTerm, logs, CommitIndex, request.ReceiverEndpoint);
+            send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
+                PrevLogTerm=prevLogTerm, Entries=Logs, LeaderCommit=CommitIndex, ReceiverEndpoint=request.ReceiverEndpoint);
         }
     }
 
@@ -491,7 +491,7 @@ machine Server
         {
             //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
               //  " | log " + this.Logs.Count + " | vote false\n");
-            send request.CandidateId, VoteResponse, (CurrentTerm, false);
+            send request.CandidateId, VoteResponse, (Term=CurrentTerm, VoteGranted=false);
         }
         else
         {
@@ -499,9 +499,9 @@ machine Server
                // " | log " + this.Logs.Count + " | vote true\n");
 
             VotedFor = request.CandidateId;
-            LeaderId = null;
+            LeaderId = default(machine);
 
-            send request.CandidateId, VoteResponse, (CurrentTerm, true);
+            send request.CandidateId, VoteResponse, (Term=CurrentTerm, VoteGranted=true);
         }
     }
 
@@ -517,7 +517,7 @@ machine Server
             //print "\n [Server] " + ServerId + " | term " + CurrentTerm + " | log " +
               //  this.Logs.Count + " | last applied: " + this.LastApplied + " | append false (< term)\n";
 
-            send request.LeaderId, AppendEntriesResponse, (CurrentTerm, false, this, request.ReceiverEndpoint);
+            send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
         }
         else
         {
@@ -528,7 +528,7 @@ machine Server
                 //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm + " | log " +
                   //  this.Logs.Count + " | last applied: " + this.LastApplied + " | append false (not in log)\n");
 
-                send request.LeaderId, AppendEntriesResponse, (CurrentTerm, false, this, request.ReceiverEndpoint);
+                send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
             else
             {
@@ -578,7 +578,7 @@ machine Server
                     //this.LastApplied + " | append true\n");
 
                 LeaderId = request.LeaderId;
-                send request.LeaderId, AppendEntriesResponse, (CurrentTerm, true, this, request.ReceiverEndpoint);
+                send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=true, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
         }
     }
@@ -587,7 +587,7 @@ machine Server
     {
         if (LastClientRequest != null)
         {
-            send ClusterManager, Request, (LastClientRequest.Client, LastClientRequest.Command);
+            send ClusterManager, Request, (Client=LastClientRequest.Client, Command=LastClientRequest.Command);
         }
     }
 
@@ -605,10 +605,10 @@ machine Server
 
     fun ShuttingDown()
     {
-        send ElectionTimer, Halt;
-        send PeriodicTimer, Halt;
+        send ElectionTimer, halt;
+        send PeriodicTimer, halt;
 
-        raise Halt;
+        raise halt;
     }
 }
 // }

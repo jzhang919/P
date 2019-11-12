@@ -15,12 +15,12 @@
 
 event NotifyLeaderUpdate: (Leader: machine, Term: int);
 event Request: (Client: machine, Command: int);
-event RedirectRequest: (Req: (Client: machine, Command: int));
+event RedirectRequest: (Client: machine, Command: int);
 event ShutDown;
 event LocalEvent;
 event CConfigureEvent: machine;
 event Response;
-event NotifyLeaderElected: (Term: int);
+event NotifyLeaderElected: int;
 event SConfigureEvent: (Id: int, Servers: seq[machine], ClusterManager: machine);
 event VoteRequest: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int);
 event VoteResponse: (Term: int, VoteGranted: bool);

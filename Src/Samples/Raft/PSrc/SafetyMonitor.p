@@ -31,15 +31,15 @@ spec SafetyMonitor observes NotifyLeaderElected
 
 	state Monitoring
 	{
-		on NotifyLeaderElected do (payload: (Term: int)) {
+		on NotifyLeaderElected do (payload: int) {
 			ProcessLeaderElected(payload);
 		}
 	}
 
-	fun ProcessLeaderElected(payload: (Term: int))
+	fun ProcessLeaderElected(payload: int)
     {
         var term: int;
-        term = payload.Term;
+        term = payload;
         if (TermsWithLeader[term]){
         	print "Detected more than one leader in term {0}", term;
         }
