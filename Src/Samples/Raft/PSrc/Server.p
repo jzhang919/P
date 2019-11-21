@@ -54,16 +54,13 @@ machine Server
             Servers = payload.Servers;
             ClusterManager = payload.ClusterManager;
 
-            // ElectionTimer = new ElectionTimer();
-            // send ElectionTimer, EConfigureEvent, this;
+            ElectionTimer = new ElectionTimer();
+            send ElectionTimer, EConfigureEvent, this;
 
-            // PeriodicTimer = new PeriodicTimer();
-            // send PeriodicTimer, PConfigureEvent, this;
-            if (payload.Id == 0){
-                raise BecomeLeader;
-            } else {
-                raise BecomeFollower;
-            }
+            PeriodicTimer = new PeriodicTimer();
+            send PeriodicTimer, PConfigureEvent, this;
+            
+            raise BecomeFollower;
             
         }
         on BecomeFollower goto Follower;
@@ -79,7 +76,7 @@ machine Server
             LeaderId = default(machine);
             VotesReceived = 0;
 
-            // send ElectionTimer, EStartTimer;
+            send ElectionTimer, EStartTimer;
         }
 
         on Request do (payload: (Client: machine, Command: int)) {
@@ -155,7 +152,7 @@ machine Server
             VotedFor = this;
             VotesReceived = 1;
 
-            // send ElectionTimer, EStartTimer;
+            send ElectionTimer, EStartTimer;
 
             //Logger.WriteLine("\n [Candidate] " + this.ServerId + " | term " + this.CurrentTerm + " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
             print "\n [Candidate] {0} on Entry | Term {1} | Votes Received {2} | Log # entries: {3}\n", this, CurrentTerm, VotesReceived, sizeof(Logs); 
@@ -252,7 +249,7 @@ machine Server
         var lastLogIndex: int;
         var lastLogTerm: int; 
 
-        // send PeriodicTimer, PStartTimer;
+        send PeriodicTimer, PStartTimer;
         idx = 0;
         while (idx < sizeof(Servers)) {
            if (idx == ServerId) {
@@ -668,8 +665,8 @@ machine Server
 
     fun ShuttingDown()
     {
-        // send ElectionTimer, halt;
-        // send PeriodicTimer, halt;
+        send ElectionTimer, halt;
+        send PeriodicTimer, halt;
 
         raise halt;
     }
