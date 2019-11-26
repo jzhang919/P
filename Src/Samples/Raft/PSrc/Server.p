@@ -50,6 +50,14 @@ machine Server
             @Receive: Configuration payload from ClusterManager. 
         */
         on SConfigureEvent do (payload: (Id: int, Servers: seq[machine], ClusterManager: machine)) {
+            configServer(payload);            
+        }
+        on BecomeFollower goto Follower;
+        on BecomeLeader goto Leader;
+        defer VoteRequest, AppendEntriesRequest;
+    }
+
+    fun configServer(payload: (Id: int, Servers: seq[machine], ClusterManager: machine)){
             ServerId = payload.Id;
             Servers = payload.Servers;
             ClusterManager = payload.ClusterManager;
@@ -63,13 +71,8 @@ machine Server
                 raise BecomeLeader;
             } else {
                 raise BecomeFollower;
-            }
-            
+            }     
         }
-        on BecomeFollower goto Follower;
-        on BecomeLeader goto Leader;
-        defer VoteRequest, AppendEntriesRequest;
-    }
 
     state Follower
     {
@@ -105,6 +108,7 @@ machine Server
             Vote(payload);
         }
 
+        // TODO: see if this ever shows up. It doesn't really make sense for a follower to receive a vote response
         on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
             print "[Follower | VoteResponse] Server {0} | Payload Term {1} | Current Term {2}", this, request.Term, CurrentTerm;
             if (request.Term > CurrentTerm)
@@ -114,6 +118,7 @@ machine Server
             }
         }
 
+        // TODO: see if this ever shows up. It doesn't really make sense for a follower to receive an append entries response
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
             PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)){
             print "[Follower | AppendEntriesRequest] Server {0}", this;
@@ -164,6 +169,7 @@ machine Server
         }
 
         on Request do (payload: (Client: machine, Command: int)) {
+            // this should be throwing an error?
             if (LeaderId != null)
             {
                 print "[Candidate | Request] {0} sends request to Leader {1}", this, LeaderId;
@@ -182,12 +188,14 @@ machine Server
             {
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
-                Vote(request);
+                // Vote(request);
+                // TODO: Check if bugs out due to above commenting-out
                 raise BecomeFollower;
             }
             else
             {
-                Vote(request);
+                // We shouldn't be voting here since we already voted for ourself
+                // Vote(request);
             }
         }
 
@@ -216,6 +224,7 @@ machine Server
                 }
             }
         }
+        // TODO: Confirm that commenting out AppendEntries below is correct
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int,
          Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)) {
             print "[Candidate | AppendEntriesRequest] Server {0}", this;
@@ -223,12 +232,12 @@ machine Server
             {
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
-                AppendEntries(request);
+                // AppendEntries(request);
                 raise BecomeFollower;
             }
             else
             {
-                AppendEntries(request);
+                // AppendEntries(request);
             }
         }
         on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
@@ -259,7 +268,7 @@ machine Server
                idx = idx + 1;
                 continue;
            }
-            lastLogIndex = sizeof(Logs);
+            lastLogIndex = sizeof(Logs) - 1;
             lastLogTerm = GetLogTermForIndex(lastLogIndex);
 
             print "Sending VoteRequest from Server {0} to Server {1}", this, Servers[idx];
@@ -284,13 +293,15 @@ machine Server
         {
             var logIndex: int;
             var logTerm: int;
-            var idx: int;                                                                                            
+            var idx: int;
+
+            CommitIndex = 0;                                                                              
 
             announce EMonitorInit, (NotifyLeaderElected, CurrentTerm);
             //monitor<SafetyMonitor>(NotifyLeaderElected, CurrentTerm);
             send ClusterManager, NotifyLeaderUpdate, (Leader=this, Term=CurrentTerm);
 
-            logIndex = sizeof(Logs);
+            logIndex = sizeof(Logs) - 1;
             logTerm = GetLogTermForIndex(logIndex);
 
             //this.NextIndex.Clear();
@@ -346,6 +357,7 @@ machine Server
         ignore ETimeout, PTimeout;
     }
 
+    // TODO: This needs to be replaced with proper heartbeat response
     fun ProcessClientRequest(trigger: (Client: machine, Command: int))
     {
         var log: Log;
@@ -373,7 +385,7 @@ machine Server
         //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " sends append requests | term " +
             //this.CurrentTerm + " | log " + this.Logs.Count + "\n");
         var lastLogIndex: int;
-        var idx: int;
+        var serverIndex: int;
         var idx2: int;
         var prevLogIndex: int;
         var prevLogTerm: int;
@@ -381,36 +393,42 @@ machine Server
         var logsAppend: seq[Log];
         print "\n[Leader | PCR | BroadcastLastClientReq] [Leader] {0} sends append requests | term {1} | log {2}\n", this, CurrentTerm, sizeof(Logs);
 
-        lastLogIndex = sizeof(Logs);
-        while (idx < sizeof(Servers))
+        lastLogIndex = sizeof(Logs) - 1;
+        while (serverIndex < sizeof(Servers))
         {
-            if (idx == ServerId) {
-                idx = idx + 1;
+            if (serverIndex == ServerId) {
+                serverIndex = serverIndex + 1;
                 continue;
             }
-            server = Servers[idx];
+            server = Servers[serverIndex];
             print "[Leader | PCR | BroadcastLastClientReq] Next index: {0}", NextIndex[server];
             if (lastLogIndex < NextIndex[server]) {
-                idx = idx + 1;
+                serverIndex = serverIndex + 1;
                 continue;
             }
 
             logsAppend = default(seq[Log]);
 
-            idx2 = NextIndex[server] - 1;
-            while (idx2 < sizeof(Logs)) {
-                print "[Leader | PCR | BroadcastLastClientReq] Appending to log";
-                logsAppend += (idx2 - (NextIndex[server] - 1), Logs[idx2]);
-                idx2 = idx2 + 1;
-            }
+            // idx2 = NextIndex[server];
+            // while (idx2 < sizeof(Logs)) {
+            //     print "[Leader | PCR | BroadcastLastClientReq] Appending to log";
+            //     logsAppend += (idx2 - (NextIndex[server] - 1), Logs[idx2]);
+            //     idx2 = idx2 + 1;
+            // }
+
+            // TODO: changed to i - 1
+            logsAppend += (i - 1, Logs[i - 1]);
+
+            // TODO: MAKE SURE TO UPDATE TO HEARTBEAT IMPLEMENTATION
+
             print "Before prevLogIndex";
             prevLogIndex = NextIndex[server] - 1;
             print "After prevLogIndex";
             prevLogTerm = GetLogTermForIndex(prevLogIndex);
-            print "[Leader | PCR | BroadcastLastClientReq] {0} appendEntryRequest to {1}", this, idx;
+            print "[Leader | PCR | BroadcastLastClientReq] {0} appendEntryRequest to {1}", this, serverIndex;
             send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
                 PrevLogTerm=prevLogTerm, Entries=logsAppend, LeaderCommit=CommitIndex, ReceiverEndpoint=LastClientRequest.Client);
-            idx = idx + 1;
+            serverIndex = serverIndex + 1;
         }
     }
 
@@ -423,13 +441,15 @@ machine Server
             VotedFor = default(machine);
 
             RedirectLastClientRequestToClusterManager();
-            Vote(request);
+
+            // TODO: commented below
+            // Vote(request);
 
             raise BecomeFollower;
         }
         else
         {
-            Vote(request);
+            // Vote(request);
         }
     }
 
@@ -453,7 +473,9 @@ machine Server
             VotedFor = default(machine);
 
             RedirectLastClientRequestToClusterManager();
-            AppendEntries(request);
+
+            // TODO: commented out below
+            // AppendEntries(request);
 
             raise BecomeFollower;
         }
@@ -480,12 +502,13 @@ machine Server
         {
         }
 
+        // TODO: check final bullet point of "Rules for servers" in paper
         else if (request.Success)
         {
             print "[Leader | AppendEntriesResponse] Success; preparing commit.";
             print "[Leader | AppendEntriesResponse] NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server], MatchIndex[request.Server];
-            NextIndex[request.Server] = sizeof(Logs) + 1;
-            MatchIndex[request.Server] = sizeof(Logs);
+            NextIndex[request.Server] = sizeof(Logs);
+            MatchIndex[request.Server] = sizeof(Logs) - 1;
             print "[Leader | AppendEntriesResponse] NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server], MatchIndex[request.Server];
             
             VotesReceived = VotesReceived + 1;
@@ -594,23 +617,25 @@ machine Server
             }
             else
             {
+                // THIS WHOLE BLOCK IS WRONG AND NEEDS TO BE FIXED TO CORRECTLY IMPLEMENT 3 AND 4 IN RAFT PAPER (page 4)
                 if (sizeof(request.Entries) > 0)
                 {
-                    currentIndex = request.PrevLogIndex + 1;
+                    startIndex = request.PrevLogIndex + 1;
                     idx = 0;
                     while (idx < sizeof(request.Entries))
                     {
                         logEntry = request.Entries[idx];
                         if (sizeof(Logs) < currentIndex)
                         {
-                            Logs += (idx, logEntry);
+                            Logs += (startIndex + idx, logEntry);
                             print "[AppendEntries] Num entries: {0}, i: {1}", sizeof(Logs), i;
                         }
-                        else if (Logs[currentIndex - 1].Term != logEntry.Term)
+                        else if (Logs[startIndex - 1].Term != logEntry.Term)
                         {
                             //this.Logs.RemoveRange(currentIndex - 1, this.Logs.Count - (currentIndex - 1));
+
                             decIdx = sizeof(Logs) - 1;
-                            while (decIdx >= currentIndex-1) {
+                            while (decIdx >= startIndex-1) {
                                 Logs -= decIdx;
                                 decIdx = decIdx - 1;
                             }
@@ -618,14 +643,13 @@ machine Server
                             print "[AppendEntries] Num entries: {0}, i: {1}", sizeof(Logs), i;
                         }
                         idx = idx + 1;
-                        currentIndex = currentIndex + 1;
                     }
                 }
 
                 if (request.LeaderCommit > CommitIndex &&
-                    sizeof(Logs) < request.LeaderCommit)
+                    (sizeof(Logs) - 1) < request.LeaderCommit)
                 {
-                    CommitIndex = sizeof(Logs);
+                    CommitIndex = sizeof(Logs) - 1;
                 }
                 else if (request.LeaderCommit > CommitIndex)
                 {
@@ -634,7 +658,7 @@ machine Server
 
                 if (CommitIndex > LastApplied)
                 {
-                    LastApplied = LastApplied + 1;
+                    LastApplied = LastApplied + sizeof(Entries);
                 }
 
                 print "\n[Server] {0} | term {1} | log {2} | entries received {3} | last applied {4} | append true\n", this, CurrentTerm, sizeof(Logs), sizeof(request.Entries), LastApplied; 
@@ -660,7 +684,7 @@ machine Server
         print "LogIndex: {0}", logIndex;
         if (logIndex > 0)
         {
-            logTerm = Logs[logIndex - 1].Term;
+            logTerm = Logs[logIndex].Term;
         }
 
         return logTerm;
