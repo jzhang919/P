@@ -603,11 +603,13 @@ machine Server
 
         if (request.Term < CurrentTerm)
         {
+            // AppendEntries RPC #2
             print "\n[Server] {0} | term {1} | log {2} | last applied {3} | append false (<term) \n", this, CurrentTerm, sizeof(Logs), LastApplied;
             send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
         }
         else
         {
+            // AppendEntries RPC #2
             if (request.PrevLogIndex > 0 &&
                 (sizeof(Logs) < request.PrevLogIndex ||
                 Logs[request.PrevLogIndex - 1].Term != request.PrevLogTerm))
@@ -617,35 +619,23 @@ machine Server
             }
             else
             {
-                // THIS WHOLE BLOCK IS WRONG AND NEEDS TO BE FIXED TO CORRECTLY IMPLEMENT 3 AND 4 IN RAFT PAPER (page 4)
-                if (sizeof(request.Entries) > 0)
-                {
-                    startIndex = request.PrevLogIndex + 1;
-                    idx = 0;
-                    while (idx < sizeof(request.Entries))
-                    {
-                        logEntry = request.Entries[idx];
-                        if (sizeof(Logs) < startIndex)
-                        {
-                            Logs += (startIndex + idx, logEntry);
-                            print "[AppendEntries] Num entries: {0}, i: {1}", sizeof(Logs), i;
-                        }
-                        else if (Logs[startIndex - 1].Term != logEntry.Term)
-                        {
-                            //this.Logs.RemoveRange(currentIndex - 1, this.Logs.Count - (currentIndex - 1));
+                idx = 0;
 
-                            decIdx = sizeof(Logs) - 1;
-                            while (decIdx >= startIndex-1) {
-                                Logs -= decIdx;
-                                decIdx = decIdx - 1;
-                            }
-                            Logs += (decIdx, logEntry);
-                            print "[AppendEntries] Num entries: {0}, i: {1}", sizeof(Logs), i;
-                        }
-                        idx = idx + 1;
+                // AppendEntries RPC #3
+                while (idx < sizeof(request.Entries) && 
+                    (idx + request.PrevLogIndex + 1) < sizeof(Logs)){
+                    if (Logs[idx + request.PrevLogIndex + 1] != request.Entries[idx]){
+                        DeleteFromLog(idx + request.PrevLogIndex + 1, sizeof(Logs));
+                        break;
                     }
+                } 
+
+                // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
+                while (idx < sizeof(request.Entries)){
+                    Logs += (idx + request.PrevLogIndex + 1, request.Entries[idx]);
                 }
 
+                // AppendEntries RPC #5. Index of last new entry is sizeof(Logs) - 1
                 if (request.LeaderCommit > CommitIndex &&
                     (sizeof(Logs) - 1) < request.LeaderCommit)
                 {
@@ -666,6 +656,19 @@ machine Server
                 LeaderId = request.LeaderId;
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=true, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
+        }
+    }
+
+    /* Delete entries from class variable Logs, a seq<.
+        @param start: Inclusive, first index to delete.
+        @param end: Exclusive, delete up to but not including this index.
+    */
+    fun DeleteFromLog(startIndex: int, endIndex: int)
+    {
+        var idx: int;
+        idx = endIndex - 1;
+        while (idx >= startIndex){
+            Logs -= idx;
         }
     }
 
