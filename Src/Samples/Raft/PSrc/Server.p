@@ -596,7 +596,7 @@ machine Server
 
     fun AppendEntries(request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine))
     {
-        var currentIndex: int;
+        var startIndex: int;
         var idx: int;
         var decIdx: int;
         var logEntry: Log;
@@ -625,7 +625,7 @@ machine Server
                     while (idx < sizeof(request.Entries))
                     {
                         logEntry = request.Entries[idx];
-                        if (sizeof(Logs) < currentIndex)
+                        if (sizeof(Logs) < startIndex)
                         {
                             Logs += (startIndex + idx, logEntry);
                             print "[AppendEntries] Num entries: {0}, i: {1}", sizeof(Logs), i;
@@ -658,7 +658,7 @@ machine Server
 
                 if (CommitIndex > LastApplied)
                 {
-                    LastApplied = LastApplied + sizeof(Entries);
+                    LastApplied = LastApplied + sizeof(request.Entries);
                 }
 
                 print "\n[Server] {0} | term {1} | log {2} | entries received {3} | last applied {4} | append true\n", this, CurrentTerm, sizeof(Logs), sizeof(request.Entries), LastApplied; 
