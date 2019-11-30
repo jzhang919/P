@@ -568,7 +568,7 @@ machine Server
     {
         var lastLogIndex: int;
         var lastLogTerm: int;
-        lastLogIndex = sizeof(Logs);
+        lastLogIndex = sizeof(Logs) - 1;
         lastLogTerm = GetLogTermForIndex(lastLogIndex);
 
         if (request.Term < CurrentTerm ||
