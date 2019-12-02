@@ -29,13 +29,11 @@ machine Server
     var MatchIndex: map[machine, int];
     var VotesReceived: int;
     var LastClientRequest: (Client: machine, Command: int);
-    var i: int;
 
     start state Init
     {
         entry
         {
-            i = 0;
             CurrentTerm = 0;
             LeaderId = default(machine);
             VotedFor = default(machine);
@@ -321,23 +319,12 @@ machine Server
                 MatchIndex[Servers[idx]] = 0;
                 idx = idx + 1;
             }
-
-            idx = 0;
-            while (idx < sizeof(Servers))
-            {
-                print "[Leader | Entry] {0} Heartbeat appendEntryRequest to {1}", this, idx;
-                if (idx == ServerId){
-                    idx = idx + 1;
-                    continue;
-                }
-                send Servers[idx], AppendEntriesRequest, 
-                    (Term=CurrentTerm, LeaderId=this, PrevLogIndex=logIndex, PrevLogTerm=logTerm, Entries=default(seq[Log]), LeaderCommit=CommitIndex, ReceiverEndpoint=default(machine));
-                idx = idx + 1;
-            }
+            // HeartbeatSendAsLeader();
         }
 
         on Request do (request: (Client: machine, Command: int)) {
             ProcessClientRequest(request);
+            HeartbeatSendAsLeader();
         }
         on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
             VoteAsLeader(request);
@@ -357,79 +344,64 @@ machine Server
         ignore ETimeout, PTimeout;
     }
 
-    // TODO: This needs to be replaced with proper heartbeat response
     fun ProcessClientRequest(trigger: (Client: machine, Command: int))
     {
         var log: Log;
-        var print_idx: int;
         print "[Leader | Request] Leader {0} processing Client {1}", this, trigger.Client;
         LastClientRequest = trigger;
         log = default(Log);
         log.Term = CurrentTerm;
         log.Command = LastClientRequest.Command;
-        print "[Leader | Request] Log Term: {0}, Log Command: {1}, idx: {2}", log.Term, log.Command, i;
-        Logs += (i, log);
-        print "[Leader | Request] Num entries: {0}, i: {1}", sizeof(Logs), i;
-        i = i + 1;
-        print_idx = 0;
-        while (print_idx < i){
-            print "[Leader | Request] Log element {0}: {1}", print_idx, Logs[print_idx];
-            print_idx = print_idx + 1;
-        }
-
-        BroadcastLastClientRequest();
+        print "[Leader | Request] Log Term: {0}, Log Command: {1}, idx: {2}", log.Term, log.Command, sizeof(Logs);
+        Logs += (sizeof(Logs), log);
+        print "[Leader | Request] Printing Log";
+        PrintLog();
     }
 
-    fun BroadcastLastClientRequest()
-    {
-        //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " sends append requests | term " +
-            //this.CurrentTerm + " | log " + this.Logs.Count + "\n");
+    fun PrintLog(){
+        var idx: int;
+        idx = 0;
+        while (idx < sizeof(Logs)){
+            print "[PrintLog] Log element {0}: {1}", idx, Logs[idx];
+            idx = idx + 1;
+        }
+    }
+
+    fun HeartbeatSendAsLeader(){
         var lastLogIndex: int;
-        var serverIndex: int;
-        var idx2: int;
+        var sIdx: int;
+        var logIdx: int;
+        var server: machine;
+        var sendLog: seq[Log];
         var prevLogIndex: int;
         var prevLogTerm: int;
-        var server: machine;
-        var logsAppend: seq[Log];
-        print "\n[Leader | PCR | BroadcastLastClientReq] [Leader] {0} sends append requests | term {1} | log {2}\n", this, CurrentTerm, sizeof(Logs);
 
         lastLogIndex = sizeof(Logs) - 1;
-        while (serverIndex < sizeof(Servers))
+        print "\n[Leader | PCR | HeartbeatSendAsLeader] [Leader] {0} sends append requests | term {1} | lastLogIndex: {2}\n", this, CurrentTerm, lastLogIndex;
+
+        while (sIdx < sizeof(Servers))
         {
-            if (serverIndex == ServerId) {
-                serverIndex = serverIndex + 1;
+            // print "On server {0}", sIdx;
+            server = Servers[sIdx];
+            if (sIdx == ServerId || lastLogIndex < NextIndex[server]){
+                sIdx = sIdx + 1;
                 continue;
             }
-            server = Servers[serverIndex];
-            print "[Leader | PCR | BroadcastLastClientReq] Next index: {0}", NextIndex[server];
-            if (lastLogIndex < NextIndex[server]) {
-                serverIndex = serverIndex + 1;
-                continue;
+            sendLog = default(seq[Log]);
+            logIdx = NextIndex[server];
+            print "Before whiel logIdx:";
+            while(logIdx <= lastLogIndex){
+                sendLog += (logIdx - NextIndex[server], Logs[logIdx]);
+                logIdx = logIdx + 1;
             }
-
-            logsAppend = default(seq[Log]);
-
-            // idx2 = NextIndex[server];
-            // while (idx2 < sizeof(Logs)) {
-            //     print "[Leader | PCR | BroadcastLastClientReq] Appending to log";
-            //     logsAppend += (idx2 - (NextIndex[server] - 1), Logs[idx2]);
-            //     idx2 = idx2 + 1;
-            // }
-
-            // TODO: changed to i - 1
-            logsAppend += (i - 1, Logs[i - 1]);
-
-            // TODO: MAKE SURE TO UPDATE TO HEARTBEAT IMPLEMENTATION
-
-            print "Before prevLogIndex";
+            print "Oops";
+            print "[Leader | PCR | HeartbeatSendAsLeader] Next index: {0} | sendLog size: {1}", NextIndex[server], sizeof(sendLog);
             prevLogIndex = NextIndex[server] - 1;
-            print "After prevLogIndex";
             prevLogTerm = GetLogTermForIndex(prevLogIndex);
-            print "[Leader | PCR | BroadcastLastClientReq] {0} appendEntryRequest to {1}", this, serverIndex;
             send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
-                PrevLogTerm=prevLogTerm, Entries=logsAppend, LeaderCommit=CommitIndex, ReceiverEndpoint=LastClientRequest.Client);
-            serverIndex = serverIndex + 1;
-        }
+                PrevLogTerm=prevLogTerm, Entries=sendLog, LeaderCommit=CommitIndex, ReceiverEndpoint=LastClientRequest.Client);
+            sIdx = sIdx + 1;
+        } 
     }
 
     fun VoteAsLeader(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
@@ -620,19 +592,22 @@ machine Server
             else
             {
                 idx = 0;
-
+                // print "We successfully begin appending.";
                 // AppendEntries RPC #3
                 while (idx < sizeof(request.Entries) && 
                     (idx + request.PrevLogIndex + 1) < sizeof(Logs)){
                     if (Logs[idx + request.PrevLogIndex + 1] != request.Entries[idx]){
+                        print "[Follower | AppendEntries] Conflict: Deleting from log entry {0} on", idx + request.PrevLogIndex + 1;
                         DeleteFromLog(idx + request.PrevLogIndex + 1, sizeof(Logs));
                         break;
                     }
+                    idx = idx + 1;
                 } 
-
+                // print "Num of entries to add: {0}", sizeof(request.Entries);
                 // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
                 while (idx < sizeof(request.Entries)){
                     Logs += (idx + request.PrevLogIndex + 1, request.Entries[idx]);
+                    idx = idx + 1;
                 }
 
                 // AppendEntries RPC #5. Index of last new entry is sizeof(Logs) - 1
