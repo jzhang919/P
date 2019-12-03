@@ -97,6 +97,7 @@ machine ClusterManager
             send Servers[idx], ShutDown;
         	idx = idx + 1;
         }
+		send Timer, halt;
 
         raise halt;
 	}

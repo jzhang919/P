@@ -63,28 +63,22 @@ machine Server
             TickCounter = 0;
             MaxTicks = getMaxTickValue();
 
-            // if (payload.Id == 0){
-            //     raise BecomeLeader;
-            // } else {
-            //     raise BecomeFollower;
-            // }
             raise BecomeFollower;
-        }
-        on BecomeFollower goto Follower;
-        on BecomeLeader goto Leader;
-        defer VoteRequest, AppendEntriesRequest, TickEvent;
+        
     }
 
     // Get "random" value for MaxTicks
     fun getMaxTickValue() : int {
         var i: int;
-        i = 500;
+        i = 350;
         while (i > 250) {    
             i = i - 5;
             if ($) {
                 if ($) {
+                    if ($) {
                     print "MaxTicks {0} for {1}", i, this;
                     return i;
+                    }
                 }
             }
         }
@@ -99,8 +93,7 @@ machine Server
             print "[Follower] {0} onEntry", this;
             LeaderId = default(machine);
             VotesReceived = 0;
-
-            send ElectionTimer, EStartTimer;
+            TickCounter = 0;  // Reset on entry
         }
 
         on Request do (payload: (Client: machine, Command: int)) {
@@ -135,7 +128,6 @@ machine Server
             }
         }
 
-        // TODO: see if this ever shows up. It doesn't really make sense for a follower to receive an append entries response
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
             PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)){
             print "[Follower | AppendEntriesRequest] Server {0}", this;
@@ -144,10 +136,10 @@ machine Server
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
             }
-            TickCounter = 0;
             AppendEntries(request);
         }
 
+        // TODO: see if this ever shows up. It doesn't really make sense for a follower to receive an append entries response
         on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine,
          ReceiverEndpoint: machine)){
             print "[Follower | AppendEntriesResponse] Server {0}", this;
@@ -162,6 +154,7 @@ machine Server
         // }
         on TickEvent do {
             TickCounter = TickCounter + 1;
+            print "[Follower] {0} TickCounter {1}, MaxTicks {2}", this, TickCounter, MaxTicks;
             if (TickCounter >= MaxTicks) {
                 raise BecomeCandidate;
             }
@@ -183,8 +176,6 @@ machine Server
             VotedFor = this;
             VotesReceived = 1;
             TickCounter = 0;  // Reset on entry
-
-            send ElectionTimer, EStartTimer;
 
             //Logger.WriteLine("\n [Candidate] " + this.ServerId + " | term " + this.CurrentTerm + " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
             print "\n [Candidate] {0} on Entry | Term {1} | Votes Received {2} | Log # entries: {3}\n", this, CurrentTerm, VotesReceived, sizeof(Logs); 
@@ -212,14 +203,14 @@ machine Server
             {
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
-                // Vote(request);
+                Vote(request);
                 // TODO: Check if bugs out due to above commenting-out
                 raise BecomeFollower;
             }
             else
             {
                 // We shouldn't be voting here since we already voted for ourself
-                // Vote(request);
+                Vote(request);
             }
         }
 
@@ -274,6 +265,7 @@ machine Server
        // on PTimeout do BroadcastVoteRequests;
         on TickEvent do {
             TickCounter = TickCounter + 1;
+            print "[Candidate] {0} TickCounter {1}, MaxTicks {2}", this, TickCounter, MaxTicks;
             if (TickCounter >= MaxTicks) {
                 raise BecomeCandidate;
             }
@@ -291,7 +283,6 @@ machine Server
         var lastLogIndex: int;
         var lastLogTerm: int; 
 
-        send PeriodicTimer, PStartTimer;
         idx = 0;
         while (idx < sizeof(Servers)) {
            if (idx == ServerId) {
@@ -358,7 +349,6 @@ machine Server
 
         on Request do (request: (Client: machine, Command: int)) {
             ProcessClientRequest(request);
-            HeartbeatSendAsLeader();
         }
         on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
             VoteAsLeader(request);
@@ -380,6 +370,8 @@ machine Server
             TickCounter = TickCounter + 1;
             if (TickCounter >= MaxTicks) {
                 // TODO : sent heartbeat here
+                HeartbeatSendAsLeader();
+                TickCounter = 0;
             }
         }
         //ignore ETimeout, PTimeout;
@@ -649,9 +641,11 @@ machine Server
                     }
                     idx = idx + 1;
                 } 
+
                 // print "Num of entries to add: {0}", sizeof(request.Entries);
                 // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
                 while (idx < sizeof(request.Entries)){
+                    print "debugging idx {0}", idx;
                     Logs += (idx + request.PrevLogIndex + 1, request.Entries[idx]);
                     idx = idx + 1;
                 }
@@ -716,9 +710,6 @@ machine Server
 
     fun ShuttingDown()
     {
-        send ElectionTimer, halt;
-        send PeriodicTimer, halt;
-
         raise halt;
     }
 }
