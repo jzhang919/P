@@ -162,6 +162,7 @@ machine Server
     {
         entry
         {
+            send ClusterManager, MakeUnavailable;
             CurrentTerm = CurrentTerm + 1;
             VotedFor = this;
             VotesReceived = 1;
@@ -194,12 +195,10 @@ machine Server
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
                 Vote(request);
-                // TODO: Check if bugs out due to above commenting-out
                 raise BecomeFollower;
             }
             else
             {
-                // We shouldn't be voting here since we already voted for ourself
                 Vote(request);
             }
         }
@@ -237,12 +236,12 @@ machine Server
             {
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
-                // AppendEntries(request);
+                AppendEntries(request);
                 raise BecomeFollower;
             }
             else
             {
-                // AppendEntries(request);
+                AppendEntries(request);
             }
         }
         on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
@@ -433,16 +432,13 @@ machine Server
             CurrentTerm = request.Term;
             VotedFor = default(machine);
 
-            RedirectLastClientRequestToClusterManager();
-
-            // TODO: commented below
-            // Vote(request);
+            Vote(request);
 
             raise BecomeFollower;
         }
         else
         {
-            // Vote(request);
+            Vote(request);
         }
     }
 
@@ -465,10 +461,7 @@ machine Server
             CurrentTerm = request.Term;
             VotedFor = default(machine);
 
-            RedirectLastClientRequestToClusterManager();
-
-            // TODO: commented out below
-            // AppendEntries(request);
+            AppendEntries(request);
 
             raise BecomeFollower;
         }
@@ -599,7 +592,7 @@ machine Server
 
         if (request.Term < CurrentTerm)
         {
-            // AppendEntries RPC #2
+            // AppendEntries RPC #1
             print "\n[Server] {0} | term {1} | log {2} | last applied {3} | append false (<term) \n", this, CurrentTerm, sizeof(Logs), LastApplied;
             send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
         }
@@ -676,6 +669,8 @@ machine Server
             Logs -= idx;
         }
     }
+
+
 
     fun RedirectLastClientRequestToClusterManager()
     {

@@ -21,7 +21,7 @@ machine WallclockTimer
 
         on TickEvent do Tick;
         on CancelTimer goto Inactive;
-        ignore StartTimer;
+        ignore StartTimer; //, CheckLogsOnShutDown;
     }
 
     fun Tick()

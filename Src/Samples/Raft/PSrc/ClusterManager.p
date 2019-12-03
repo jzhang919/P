@@ -39,6 +39,8 @@ machine ClusterManager
 
 		on LocalEvent goto Configuring;
 		defer SentAllTicks;
+		ignore MakeUnavailable;
+
 	}
 
 	state Configuring
@@ -60,6 +62,8 @@ machine ClusterManager
 		}
 
 		on LocalEvent goto Unavailable;
+		ignore MakeUnavailable;
+
 	}
 
 	state Unavailable
@@ -77,6 +81,7 @@ machine ClusterManager
 			send Timer, TickEvent;
 		}
 		defer Request;
+		ignore MakeUnavailable;
 	}
 
 	fun UpdateLeader(request: (Leader: machine, Term: int))
@@ -97,6 +102,7 @@ machine ClusterManager
             send Servers[idx], ShutDown;
         	idx = idx + 1;
         }
+		//send Timer, CheckLogsOnShutDown, Servers;
 		send Timer, halt;
 
         raise halt;
@@ -120,6 +126,7 @@ machine ClusterManager
 		on SentAllTicks do {
 			send Timer, TickEvent;
 		}
+		on MakeUnavailable goto Unavailable;
 	}
 
 	fun BecomeUnavailable()

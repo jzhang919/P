@@ -11,7 +11,7 @@
 
 // namespace Raft
 // {
-spec SafetyMonitor observes NotifyLeaderElected
+spec SafetyMonitor observes NotifyLeaderElected // CheckLogsOnShutDown
 {
 	//unused: int CurrentTerm;
 //    HashSet<int> TermsWithLeader;
@@ -34,6 +34,10 @@ spec SafetyMonitor observes NotifyLeaderElected
 		on NotifyLeaderElected do (payload: int) {
 			ProcessLeaderElected(payload);
 		}
+
+		// on CheckLogsOnShutDown do (payload: seq[machine]) {
+		// 	CheckFinalLogs(payload);
+		// }
 	}
 
 	fun ProcessLeaderElected(payload: int)
@@ -46,5 +50,15 @@ spec SafetyMonitor observes NotifyLeaderElected
         assert(!TermsWithLeader[term]);
         TermsWithLeader[term] = true;
     }
+
+	// fun CheckFinalLogs(payload: seq[machine]) {
+	// 	var idx: int;
+	// 	var logs: seq[Log];
+	// 	idx = 0;
+	// 	while (idx < sizeof(payload)) {
+
+	// 		idx = idx + 1;
+	// 	}
+	// }
 }
 // }
