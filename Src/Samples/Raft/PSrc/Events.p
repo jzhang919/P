@@ -17,6 +17,7 @@ event NotifyLeaderUpdate: (Leader: machine, Term: int);
 event Request: (Client: machine, Command: int);
 event RedirectRequest: (Client: machine, Command: int);
 event ShutDown;
+event MakeUnavailable;
 event LocalEvent;
 event CConfigureEvent: machine;
 event Response;
@@ -44,6 +45,7 @@ event TickEvent;
 event CancelTimer;
 event StartTimer;
 event SentAllTicks;
+event CheckLogsOnShutDown: seq[machine];
 
 event EMonitorInit;
 
