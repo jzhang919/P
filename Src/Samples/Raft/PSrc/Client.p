@@ -78,7 +78,7 @@ machine Client
     fun ProcessResponse()
     {
         print "In ProcessResponse of Client";
-        if (Counter == 100)
+        if (Counter == 5)
         {
 
             send Cluster, ShutDown;
