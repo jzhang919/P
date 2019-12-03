@@ -18,8 +18,6 @@ machine Server
     var ClusterManager : machine;
     var Servers: seq[machine];
     var LeaderId: machine;
-    var ElectionTimer: machine;
-    var PeriodicTimer: machine;
     var CurrentTerm: int;
     var VotedFor: machine;
     var Logs: seq[Log];
@@ -29,6 +27,9 @@ machine Server
     var MatchIndex: map[machine, int];
     var VotesReceived: int;
     var LastClientRequest: (Client: machine, Command: int);
+
+    var MaxTicks: int;  // Randomly set ceiling for tick count
+    var TickCounter: int; // Ticks seen so far. Reset at certain points.
 
     start state Init
     {
@@ -58,19 +59,38 @@ machine Server
     fun configServer(payload: (Id: int, Servers: seq[machine], ClusterManager: machine)){
             ServerId = payload.Id;
             Servers = payload.Servers;
-            ClusterManager = payload.ClusterManager;
+            ClusterManager = payload.ClusterManager;    
+            TickCounter = 0;
+            MaxTicks = getMaxTickValue();
 
-            // ElectionTimer = new ElectionTimer();
-            // send ElectionTimer, EConfigureEvent, this;
-
-            // PeriodicTimer = new PeriodicTimer();
-            // send PeriodicTimer, PConfigureEvent, this;
-            if (payload.Id == 0){
-                raise BecomeLeader;
-            } else {
-                raise BecomeFollower;
-            }     
+            // if (payload.Id == 0){
+            //     raise BecomeLeader;
+            // } else {
+            //     raise BecomeFollower;
+            // }
+            raise BecomeFollower;
         }
+        on BecomeFollower goto Follower;
+        on BecomeLeader goto Leader;
+        defer VoteRequest, AppendEntriesRequest, TickEvent;
+    }
+
+    // Get "random" value for MaxTicks
+    fun getMaxTickValue() : int {
+        var i: int;
+        i = 500;
+        while (i > 250) {    
+            i = i - 5;
+            if ($) {
+                if ($) {
+                    print "MaxTicks {0} for {1}", i, this;
+                    return i;
+                }
+            }
+        }
+        print "MaxTicks {0} for {1}", i, this;
+        return i;
+    }
 
     state Follower
     {
@@ -80,7 +100,7 @@ machine Server
             LeaderId = default(machine);
             VotesReceived = 0;
 
-            // send ElectionTimer, EStartTimer;
+            send ElectionTimer, EStartTimer;
         }
 
         on Request do (payload: (Client: machine, Command: int)) {
@@ -102,7 +122,6 @@ machine Server
                 CurrentTerm = payload.Term;
                 VotedFor = default(machine);
             }
-
             Vote(payload);
         }
 
@@ -125,7 +144,7 @@ machine Server
                 CurrentTerm = request.Term;
                 VotedFor = default(machine);
             }
-
+            TickCounter = 0;
             AppendEntries(request);
         }
 
@@ -138,15 +157,21 @@ machine Server
                 VotedFor = default(machine);
             }
         }
-        on ETimeout do {
-            raise BecomeCandidate;
+        // on ETimeout do {
+        //     raise BecomeCandidate;
+        // }
+        on TickEvent do {
+            TickCounter = TickCounter + 1;
+            if (TickCounter >= MaxTicks) {
+                raise BecomeCandidate;
+            }
         }
         on ShutDown do { 
             ShuttingDown();
         }
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
-        ignore PTimeout;
+        //ignore PTimeout;
     }
 
 
@@ -157,8 +182,9 @@ machine Server
             CurrentTerm = CurrentTerm + 1;
             VotedFor = this;
             VotesReceived = 1;
+            TickCounter = 0;  // Reset on entry
 
-            // send ElectionTimer, EStartTimer;
+            send ElectionTimer, EStartTimer;
 
             //Logger.WriteLine("\n [Candidate] " + this.ServerId + " | term " + this.CurrentTerm + " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
             print "\n [Candidate] {0} on Entry | Term {1} | Votes Received {2} | Log # entries: {3}\n", this, CurrentTerm, VotesReceived, sizeof(Logs); 
@@ -242,10 +268,16 @@ machine Server
             print "[Candidate | AppendEntriesResponse] Server {0}", this;
             RespondAppendEntriesAsCandidate(request);
         }
-        on ETimeout do {
-            raise BecomeCandidate;
+        // on ETimeout do {
+        //     raise BecomeCandidate;
+        // }
+       // on PTimeout do BroadcastVoteRequests;
+        on TickEvent do {
+            TickCounter = TickCounter + 1;
+            if (TickCounter >= MaxTicks) {
+                raise BecomeCandidate;
+            }
         }
-        on PTimeout do BroadcastVoteRequests;
         on ShutDown do ShuttingDown;
         on BecomeLeader goto Leader;
         on BecomeFollower goto Follower;
@@ -259,7 +291,7 @@ machine Server
         var lastLogIndex: int;
         var lastLogTerm: int; 
 
-        // send PeriodicTimer, PStartTimer;
+        send PeriodicTimer, PStartTimer;
         idx = 0;
         while (idx < sizeof(Servers)) {
            if (idx == ServerId) {
@@ -298,7 +330,9 @@ machine Server
             announce EMonitorInit, (NotifyLeaderElected, CurrentTerm);
             //monitor<SafetyMonitor>(NotifyLeaderElected, CurrentTerm);
             send ClusterManager, NotifyLeaderUpdate, (Leader=this, Term=CurrentTerm);
-
+            
+            // Fixed Leader MaxTicks. Used for heartbeat
+            MaxTicks = 5;
             logIndex = sizeof(Logs) - 1;
             logTerm = GetLogTermForIndex(logIndex);
 
@@ -341,7 +375,14 @@ machine Server
         }
         on ShutDown do ShuttingDown;
         on BecomeFollower goto Follower;
-        ignore ETimeout, PTimeout;
+
+        on TickEvent do {
+            TickCounter = TickCounter + 1;
+            if (TickCounter >= MaxTicks) {
+                // TODO : sent heartbeat here
+            }
+        }
+        //ignore ETimeout, PTimeout;
     }
 
     fun ProcessClientRequest(trigger: (Client: machine, Command: int))
@@ -558,6 +599,7 @@ machine Server
             //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
                // " | log " + this.Logs.Count + " | vote true\n");
             print "\n [Server] {0} | term {1} | log {2} | Approve {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
+            TickCounter = 0;
 
             VotedFor = request.CandidateId;
             LeaderId = default(machine);
@@ -593,6 +635,10 @@ machine Server
             {
                 idx = 0;
                 // print "We successfully begin appending.";
+                // On AppendEntries RPC from current leader, reset ElectionTimer
+                if (LeaderId == request.LeaderId) {
+                    TickCounter = 0;
+                }
                 // AppendEntries RPC #3
                 while (idx < sizeof(request.Entries) && 
                     (idx + request.PrevLogIndex + 1) < sizeof(Logs)){
@@ -670,8 +716,8 @@ machine Server
 
     fun ShuttingDown()
     {
-        // send ElectionTimer, halt;
-        // send PeriodicTimer, halt;
+        send ElectionTimer, halt;
+        send PeriodicTimer, halt;
 
         raise halt;
     }
