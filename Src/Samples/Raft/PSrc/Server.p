@@ -263,7 +263,7 @@ machine Server
         idx = 0;
         while (idx < sizeof(Servers)) {
            if (idx == ServerId) {
-               idx = idx + 1;
+                idx = idx + 1;
                 continue;
            }
             lastLogIndex = sizeof(Logs) - 1;
@@ -389,12 +389,10 @@ machine Server
             }
             sendLog = default(seq[Log]);
             logIdx = NextIndex[server];
-            print "Before whiel logIdx:";
             while(logIdx <= lastLogIndex){
                 sendLog += (logIdx - NextIndex[server], Logs[logIdx]);
                 logIdx = logIdx + 1;
             }
-            print "Oops";
             print "[Leader | PCR | HeartbeatSendAsLeader] Next index: {0} | sendLog size: {1}", NextIndex[server], sizeof(sendLog);
             prevLogIndex = NextIndex[server] - 1;
             prevLogTerm = GetLogTermForIndex(prevLogIndex);
@@ -470,26 +468,25 @@ machine Server
             RedirectLastClientRequestToClusterManager();
             raise BecomeFollower;
         }
-        else if (request.Term != CurrentTerm)
+        else if (request.Term < CurrentTerm)
         {
+            //Ignore if out of date
         }
-
         // TODO: check final bullet point of "Rules for servers" in paper
         else if (request.Success)
         {
             print "[Leader | AppendEntriesResponse] Success; preparing commit.";
-            print "[Leader | AppendEntriesResponse] NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server], MatchIndex[request.Server];
             NextIndex[request.Server] = sizeof(Logs);
             MatchIndex[request.Server] = sizeof(Logs) - 1;
-            print "[Leader | AppendEntriesResponse] NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server], MatchIndex[request.Server];
+            print "[Leader | AppendEntriesResponse] Updated Indices: NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server], MatchIndex[request.Server];
             
             VotesReceived = VotesReceived + 1;
             print "[Leader | AppendEntriesResponse] VotesReceived: {0}", VotesReceived;
             if (request.ReceiverEndpoint == null){
                 print "[Leader | AppendEntriesResponse] request.ReceiverEndpoint: null";    
+                return;
             }        
-            if (request.ReceiverEndpoint != null &&
-                VotesReceived >= ((sizeof(Servers)-1) / 2) + 1)
+            else if (VotesReceived > (sizeof(Servers)-1) / 2)
             {
                 //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
                   //  " | append votes " + this.VotesReceived + " | append success\n");
@@ -513,27 +510,30 @@ machine Server
         }
         else
         {
-            if (NextIndex[request.Server] > 1)
+            if (NextIndex[request.Server] > 0)
             {
                 NextIndex[request.Server] = NextIndex[request.Server] - 1;
             }
 
 //            List<Log> logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1, this.Logs.Count - (this.NextIndex[request.Server] - 1));
             logsAppend = default(seq[Log]);
-            idx = NextIndex[request.Server] - 1;
-            while (idx < sizeof(Logs)) {
-                logsAppend += (idx, Logs[idx]);
-                idx = idx + 1;
-            }
-
+            
             prevLogIndex = NextIndex[request.Server] - 1;
             prevLogTerm = GetLogTermForIndex(prevLogIndex);
+
+            idx = NextIndex[request.Server];
+            
+            while (idx < sizeof(Logs)) {
+                logsAppend += (idx - NextIndex[request.Server], Logs[idx]);
+                idx = idx + 1;
+            }
 
             //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
             print "\n[Leader] {0} | term {1} | log {2} | append votes {3} | append fail (next idx = {4})\n", this, CurrentTerm, sizeof(Logs), VotesReceived, NextIndex[request.Server];
             send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
                 PrevLogTerm=prevLogTerm, Entries=Logs, LeaderCommit=CommitIndex, ReceiverEndpoint=request.ReceiverEndpoint);
         }
+        print "[Leader | AppendEntriesResponse] CommitIndex: {0}", CommitIndex;
     }
 
     fun Vote(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
