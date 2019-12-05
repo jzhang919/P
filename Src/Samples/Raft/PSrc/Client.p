@@ -6,7 +6,8 @@
 machine Client
 {
     var Cluster: machine;
-    var LatestCommand: int;
+    var LatestKey: string;
+    var LatestVal: string;
     var Counter: int;
 
 
@@ -14,7 +15,8 @@ machine Client
     {
         entry
         {
-            LatestCommand = -1;
+            LatestKey = default(string);
+            LatestVal = default(string);
             Counter = 0;
         }
         on CConfigureEvent do (payload: machine) {
@@ -33,11 +35,12 @@ machine Client
     { 
         entry
         {
-            LatestCommand = ChooseVal();
+            LatestKey = "k{0}", Counter;
+            LatestVal = "v{0}", Counter;
             Counter = Counter + 1;
             //Logger.WriteLine("\n [Client] new request " + this.LatestCommand + "\n");
-            print "\n\n\n[Client] new request {0}\n", LatestCommand;
-            send Cluster, Request, (Client=this, Command=LatestCommand);
+            print "\n\n\n[Client] new request <{0}, {1}>\n", LatestKey, LatestVal;
+            send Cluster, Request, (Client=this, Key=LatestKey, Val=LatestVal);
         }    
 
         on Response do {

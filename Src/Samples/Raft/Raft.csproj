@@ -17,13 +17,13 @@
     <WarningLevel>0</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\PSharpRuntime\PSharpRuntime.csproj" />
+    <ProjectReference Include="..\..\CoyoteRuntime\CoyoteRuntime.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="PSrc\" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Coyote" Version="1.0.0-rc2" />
+    <PackageReference Include="Microsoft.Coyote" Version="1.0.0-rc6" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Main.cs" />

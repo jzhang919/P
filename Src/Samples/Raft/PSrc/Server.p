@@ -17,7 +17,7 @@ machine Server
     var NextIndex: map[machine, int];
     var MatchIndex: map[machine, int];
     var VotesReceived: int;
-    var LastClientRequest: (Client: machine, Command: int);
+    var LastClientRequest: (Client: machine, Key: string, Val: string);
 
     var MaxTicks: int;  // Randomly set ceiling for tick count
     var TickCounter: int; // Ticks seen so far. Reset at certain points.
@@ -86,11 +86,11 @@ machine Server
             TickCounter = 0;  // Reset on entry
         }
 
-        on Request do (payload: (Client: machine, Command: int)) {
+        on Request do (payload: (Client: machine, Key: string, Val: string)) {
             if (LeaderId != null)
             {
                 print "[Follower | Request] {0} sends request to Leader {1}", this, LeaderId;
-                send LeaderId, Request, payload.Client, payload.Command;
+                send LeaderId, Request, (Client=payload.Client, Key=payload.Key, Val=payload.Val);
             }
             else
             {
@@ -152,8 +152,15 @@ machine Server
         on ShutDown do { 
             ShuttingDown();
         }
+        on AddServer do (server: machine){
+            send ClusterManager, AddServerResponse, (Server=server, ServerAdded=false);
+        }
+        on RemoveServer do(server: machine){
+            send ClusterManager, RemoveServerResponse, (Server=server, ServerRemoved=false);
+        }
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
+
         //ignore PTimeout;
     }
 
@@ -174,12 +181,12 @@ machine Server
             BroadcastVoteRequests();
         }
 
-        on Request do (payload: (Client: machine, Command: int)) {
+        on Request do (payload: (Client: machine, Key: string, Val: string)) {
             // this should be throwing an error?
             if (LeaderId != null)
             {
                 print "[Candidate | Request] {0} sends request to Leader {1}", this, LeaderId;
-                send LeaderId, Request, payload.Client, payload.Command;
+                send LeaderId, Request, payload;
             }
             else
             {
@@ -259,6 +266,12 @@ machine Server
                 raise BecomeCandidate;
             }
         }
+        on AddServer do (server: machine){
+            send ClusterManager, AddServerResponse, (Server=server, ServerAdded=false);
+        }
+        on RemoveServer do(server: machine){
+            send ClusterManager, RemoveServerResponse, (Server=server, ServerRemoved=false);
+        }
         on ShutDown do ShuttingDown;
         on BecomeLeader goto Leader;
         on BecomeFollower goto Follower;
@@ -336,8 +349,8 @@ machine Server
             // HeartbeatSendAsLeader();
         }
 
-        on Request do (request: (Client: machine, Command: int)) {
-            ProcessClientRequest(request);
+        on Request do (payload: (Client: machine, Key: string, Val: string)) {
+            ProcessClientRequest(payload);
         }
         on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
             VoteAsLeader(request);
@@ -352,6 +365,15 @@ machine Server
         on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
             RespondAppendEntriesAsLeader(request);
         }
+        on AddServer do (server: machine){
+            AddServerToConfig(server);
+            UpdateFollowerConfigs();
+        }
+        on RemoveServer do (server: machine){
+            RemoveServerFromConfig(server);
+            UpdateFollowerConfigs();
+        }
+
         on ShutDown do ShuttingDown;
         on BecomeFollower goto Follower;
 
@@ -366,15 +388,43 @@ machine Server
         //ignore ETimeout, PTimeout;
     }
 
-    fun ProcessClientRequest(trigger: (Client: machine, Command: int))
+    fun AddServerToConfig(server: machine){
+        Servers += (sizeof(Servers), server);
+    }
+
+    fun RemoveServerFromConfig(server: machine){
+        var idx: int;
+        var sIdx: int;
+        idx = 0;
+        sIdx = -1;
+
+        while (idx < sizeof(Servers)){
+            if (Servers[idx]==server){
+                sIdx = idx;
+                break;
+            }
+            idx = idx + 1;
+        }
+
+        if (sIdx >= 0 && sIdx < sizeof(Servers)){
+            Servers -= sIdx;
+        }
+    }
+
+    fun UpdateFollowerConfigs (){
+
+    }
+
+    fun ProcessClientRequest(trigger: (Client: machine, Key: string, Val: string))
     {
         var log: Log;
         print "[Leader | Request] Leader {0} processing Client {1}", this, trigger.Client;
         LastClientRequest = trigger;
         log = default(Log);
         log.Term = CurrentTerm;
-        log.Command = LastClientRequest.Command;
-        print "[Leader | Request] Log Term: {0}, Log Command: {1}, idx: {2}", log.Term, log.Command, sizeof(Logs);
+        log.Key = LastClientRequest.Key;
+        log.Val = LastClientRequest.Val;
+        print "[Leader | Request] Log Term: {0}, Log Key: {1}, Log Val: {2}, idx: {3}", log.Term, log.Key, log.Val, sizeof(Logs);
         Logs += (sizeof(Logs), log);
         print "[Leader | Request] Printing Log";
         PrintLog();
@@ -514,12 +564,13 @@ machine Server
                     CommitIndex = commitIndex;
 
                    // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | command " + this.Logs[commitIndex - 1].Command + "\n");
-                    print "\n[Leader] {0} | term {1} | log {2} | command {3}\n", this, CurrentTerm, sizeof(Logs), Logs[commitIndex - 1].Command; 
+                    print "\n[Leader] {0} | term {1} | log {2} | Key {3} | Val {4}\n", this, CurrentTerm, sizeof(Logs), Logs[commitIndex - 1].Key, Logs[commitIndex - 1].Val;
 
                 }
 
                 VotesReceived = 0;
-                LastClientRequest = (Client=default(machine), Command=default(int));
+                // TODO: Should this be null?
+                LastClientRequest = (Client=default(machine), Key=default(string), Val=default(string));
 
                 send request.ReceiverEndpoint, Response;
             }
@@ -676,7 +727,7 @@ machine Server
     {
         if (LastClientRequest != null)
         {
-            send ClusterManager, Request, (Client=LastClientRequest.Client, Command=LastClientRequest.Command);
+            send ClusterManager, Request, (Client=LastClientRequest.Client, Key=LastClientRequest.Key, Val=LastClientRequest.Val);
         }
     }
 

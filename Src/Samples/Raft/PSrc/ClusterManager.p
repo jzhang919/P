@@ -37,13 +37,13 @@ machine ClusterManager
 			raise LocalEvent;
 		}
 
-		on LocalEvent goto Configuring;
-		defer SentAllTicks;
+		on LocalEvent goto Initialize;
+		defer SentAllTicks, AddServer, RemoveServer;
 		ignore MakeUnavailable;
 
 	}
 
-	state Configuring
+	state Initialize
 	{
 		entry
 		{
@@ -53,7 +53,7 @@ machine ClusterManager
             send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
 			while(idx < NumberOfServers)
 			{
-				print "[ClusterManager | Configure] Configuring server {0}", idx;
+				print "[ClusterManager | Initialize] Initializing server {0}", idx;
 				send Servers[idx], SConfigureEvent, (Id = idx, Servers = Servers, ClusterManager = this);
 				idx = idx + 1;
 			}
@@ -61,6 +61,7 @@ machine ClusterManager
 			raise LocalEvent;
 		}
 
+		defer AddServer, RemoveServer;
 		on LocalEvent goto Unavailable;
 		ignore MakeUnavailable;
 
@@ -80,7 +81,7 @@ machine ClusterManager
 		on SentAllTicks do {
 			send Timer, TickEvent;
 		}
-		defer Request;
+		defer Request, AddServer, RemoveServer;
 		ignore MakeUnavailable;
 	}
 
@@ -110,17 +111,43 @@ machine ClusterManager
 
 	state Available
 	{
-		on Request do (payload: (Client: machine, Command: int)){
-			print "[ClusterManager] Request {0} sent from client {1}", payload.Command, payload.Client;
-			send Leader, Request, (Client=payload.Client, Command=payload.Command);
+		on Request do (payload: (Client: machine, Key: string, Val: string)){
+			print "[ClusterManager] Request <{0}, {1}> sent from client {2}", payload.Key, payload.Val, payload.Client;
+			send Leader, Request, (Client=payload.Client, Key=payload.Key, Val=payload.Val);
 		}
-		on RedirectRequest do (payload : (Client: machine, Command: int)){
+		on RedirectRequest do (payload: (Client: machine, Key: string, Val: string)){
 			send this, Request, payload;
 			raise LocalEvent;
 		}
 		on NotifyLeaderUpdate do (payload: (Leader: machine, Term: int)){
 			UpdateLeader(payload);
 		}
+		on AddServer do (server: machine){
+			AddServerToCluster(server);
+		}
+
+		on RemoveServer do (server: machine){
+			RemoveServerFromCluster(server);
+		}
+
+		on AddServerResponse do (payload: (Server: machine, ServerAdded: bool)){
+			if (!payload.ServerAdded){
+				send this, AddServer, payload.Server;
+				raise LocalEvent;
+			} else {
+				NumberOfServers = NumberOfServers + 1;
+			}
+		}
+
+		on RemoveServerResponse do (payload: (Server: machine, ServerRemoved: bool)){
+			if (!payload.ServerRemoved){
+				send this, RemoveServer, payload.Server;
+				raise LocalEvent;
+			} else {
+				NumberOfServers = NumberOfServers - 1;
+			}
+		}
+
 		on ShutDown do ShuttingDown;
 		on LocalEvent goto Unavailable;
 		on SentAllTicks do {
@@ -129,9 +156,12 @@ machine ClusterManager
 		on MakeUnavailable goto Unavailable;
 	}
 
-	fun BecomeUnavailable()
-    {
+    fun AddServerToCluster(server: machine){
+    	send Leader, AddServer, server;
+    }
 
+    fun RemoveServerFromCluster(server: machine){
+    	send Leader, RemoveServer, server;
     }
 }
 // }
