@@ -1,4 +1,4 @@
-using Microsoft.PSharp;
+using Microsoft.Coyote;
 using System;
 using System.Runtime;
 using System.Collections.Generic;
@@ -148,10 +148,10 @@ namespace FailOver
             this.receives.Add(nameof(PHalt));
         }
         
-        public async Task Anon_1()
+        public async Task Anon_1(Event currentMachine_dequeuedEvent)
         {
             FaultTolerantMachine currentMachine = this;
-            PrtTuple<PMachineValue, PMachineValue> arg = ((PEvent<PrtTuple<PMachineValue, PMachineValue>>)currentMachine.ReceivedEvent).PayloadT;
+            PrtTuple<PMachineValue, PMachineValue> arg = ((PEvent<PrtTuple<PMachineValue, PMachineValue>>)currentMachine_dequeuedEvent).PayloadT;
             PMachineValue TMP_tmp0_1 = null;
             PMachineValue TMP_tmp1_1 = null;
             PMachineValue TMP_tmp2_1 = null;
@@ -222,14 +222,14 @@ namespace FailOver
         {
             FaultTolerantMachine currentMachine = this;
             IEventWithPayload TMP_tmp0_4 = null;
-            var PGEN_recvEvent_1 = await currentMachine.ReceiveEvent(typeof(PHalt), typeof(Default));
+            var PGEN_recvEvent_1 = await currentMachine.ReceiveEvent(typeof(PHalt), typeof(DefaultEvent));
             switch (PGEN_recvEvent_1) {
                 case PHalt PGEN_evt_1: {
                     TMP_tmp0_4 = new PHalt(null);
                     currentMachine.RaiseEvent(currentMachine, (Event)TMP_tmp0_4);
                     throw new PUnreachableCodeException();
                 } break;
-                case Default PGEN_evt_2: {
+                case DefaultEvent PGEN_evt_2: {
                 } break;
             }
         }
@@ -352,10 +352,10 @@ namespace FailOver
             ReliableStorageMachine currentMachine = this;
             s_1 = ((PrtInt)(long)MyState.State0);
         }
-        public void Anon_7()
+        public void Anon_7(Event currentMachine_dequeuedEvent)
         {
             ReliableStorageMachine currentMachine = this;
-            PMachineValue m_1 = ((PEvent<PMachineValue>)currentMachine.ReceivedEvent).PayloadT;
+            PMachineValue m_1 = ((PEvent<PMachineValue>)currentMachine_dequeuedEvent).PayloadT;
             PMachineValue TMP_tmp0_7 = null;
             IEventWithPayload TMP_tmp1_6 = null;
             MyState TMP_tmp2_6 = (MyState)(0);
@@ -409,20 +409,20 @@ namespace FailOver
         public static void InitializeMonitorObserves() {
         }
         
-        public static void InitializeMonitorMap(PSharpRuntime runtime) {
+        public static void InitializeMonitorMap(IActorRuntime runtime) {
         }
         
         
-        [Microsoft.PSharp.Test]
-        public static void Execute(PSharpRuntime runtime) {
-            runtime.SetLogger(new PLogger());
+        [Microsoft.Coyote.TestingServices.Test]
+        public static void Execute(IActorRuntime runtime) {
+            runtime.SetLogFormatter(new PLogFormatter());
             PModule.runtime = runtime;
             PHelper.InitializeInterfaces();
             InitializeLinkMap();
             InitializeInterfaceDefMap();
             InitializeMonitorMap(runtime);
             InitializeMonitorObserves();
-            runtime.CreateMachine(typeof(_GodMachine), new _GodMachine.Config(typeof(TestDriver)));
+            runtime.CreateActor(typeof(_GodMachine), new _GodMachine.Config(typeof(TestDriver)));
         }
     }
     public class I_TestDriver : PMachineValue {
