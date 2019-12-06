@@ -37,3 +37,4 @@ event UpdateServersResponse: bool;
 event EMonitorInit;
 
 type Log = (Term: int, Key: string, Val: string);
+type Config = seq[machine];

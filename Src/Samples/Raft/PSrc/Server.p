@@ -12,6 +12,8 @@ machine Server
     var CurrentTerm: int;
     var VotedFor: machine;
     var Logs: seq[Log];
+    var ConfigLogs: seq[Config];
+    var CommitServers: seq[machine];
     var CommitIndex: int;
     var LastApplied: int;
     var NextIndex: map[machine, int];
