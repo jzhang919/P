@@ -14,10 +14,9 @@ machine Server
     var Logs: seq[Log];
     var ConfigLogs: seq[Config];
     var CommitServers: seq[machine];
-    var CommitIndex: int;
-    var LastApplied: int;
-    var NextIndex: map[machine, int];
-    var MatchIndex: map[machine, int];
+    var CommitIndex: Idxs;
+    var NextIndex: map[machine, Idxs];
+    var MatchIndex: map[machine, Idxs];
     var VotesReceived: int;
     var LastClientRequest: (Client: machine, Key: string, Val: string);
 
@@ -31,11 +30,11 @@ machine Server
             CurrentTerm = 0;
             LeaderId = default(machine);
             VotedFor = default(machine);
+            ConfigLogs = default(seq[Config]);
             Logs = default(seq[Log]);
-            CommitIndex = 0;
-            LastApplied = 0;
-            NextIndex = default(map[machine, int]);
-            MatchIndex = default(map[machine, int]);
+            CommitIndex = default(Idxs);
+            NextIndex = default(map[machine, Idxs]);
+            MatchIndex = default(map[machine, Idxs]);
         }
 
         /*
@@ -178,7 +177,7 @@ machine Server
             TickCounter = 0;  // Reset on entry
 
             //Logger.WriteLine("\n [Candidate] " + this.ServerId + " | term " + this.CurrentTerm + " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
-            print "\n [Candidate] {0} on Entry | Term {1} | Votes Received {2} | Log # entries: {3}\n", this, CurrentTerm, VotesReceived, sizeof(Logs); 
+            print "\n [Candidate] {0} on Entry | Term {1} | Votes Received {2} | KV Log # entries: {3} | Cfg Log # Entries {4}\n", this, CurrentTerm, VotesReceived, sizeof(Logs), sizeof(ConfigLogs); 
 
             BroadcastVoteRequests();
         }
@@ -231,7 +230,7 @@ machine Server
                 {
                    // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
                     //    " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
-                    print "\n [Leader] {0} | term {1} | election votes {2} | log {3}\n", this, CurrentTerm, VotesReceived, sizeof(Logs); 
+                    print "\n [Leader] {0} | term {1} | election votes {2} | KV log size {3} | Cfg Log size {4} \n", this, CurrentTerm, VotesReceived, sizeof(Logs), sizeof(ConfigLogs); 
                     VotesReceived = 0;
                     raise BecomeLeader;
                 }
@@ -294,7 +293,7 @@ machine Server
                 continue;
            }
             lastLogIndex = sizeof(Logs) - 1;
-            lastLogTerm = GetLogTermForIndex(lastLogIndex);
+            lastLogTerm = GetLogTermForIndex(lastLogIndex, true);
 
             print "Sending VoteRequest from Server {0} to Server {1}", this, Servers[idx];
             send Servers[idx], VoteRequest, (Term=CurrentTerm, CandidateId=this, LastLogIndex=lastLogIndex, LastLogTerm=lastLogTerm);
@@ -316,11 +315,13 @@ machine Server
     {
         entry
         {
-            var logIndex: int;
-            var logTerm: int;
+            var KVLogIndex: int;
+            var ConfigLogIndex: int;
+            var KVLogTerm: int;
+            var ConfigLogTerm: int;
             var idx: int;
 
-            CommitIndex = 0;                                                                              
+            CommitIndex = default(Idxs);                                                                              
 
             announce EMonitorInit, (NotifyLeaderElected, CurrentTerm);
             //monitor<SafetyMonitor>(NotifyLeaderElected, CurrentTerm);
@@ -328,13 +329,13 @@ machine Server
             
             // Fixed Leader MaxTicks. Used for heartbeat
             MaxTicks = 5;
-            logIndex = sizeof(Logs) - 1;
-            logTerm = GetLogTermForIndex(logIndex);
+            KVLogIndex = sizeof(Logs) - 1;
+            KVLogTerm = GetLogTermForIndex(KVLogIndex, true);
+            ConfigLogIndex = sizeof(ConfigLogs) - 1;
+            ConfigLogTerm = GetLogTermForIndex(ConfigLogIndex, false);
 
-            //this.NextIndex.Clear();
-            //this.MatchIndex.Clear();
-            NextIndex = default(map[machine, int]);
-            MatchIndex = default(map[machine, int]);
+            NextIndex = default(map[machine, Idxs]);
+            MatchIndex = default(map[machine, Idxs]);
             
             idx = 0;
             while (idx < sizeof(Servers))
@@ -343,9 +344,8 @@ machine Server
                     idx = idx + 1;
                     continue;
                 }
-                
-                NextIndex[Servers[idx]] = logIndex + 1;
-                MatchIndex[Servers[idx]] = 0;
+                NextIndex[Servers[idx]] = (KV=KVLogIndex + 1, Config=ConfigLogIndex + 1);
+                MatchIndex[Servers[idx]] = (KV=0, Config=0);
                 idx = idx + 1;
             }
             // HeartbeatSendAsLeader();
@@ -457,21 +457,21 @@ machine Server
         {
             // print "On server {0}", sIdx;
             server = Servers[sIdx];
-            if (sIdx == ServerId || lastLogIndex < NextIndex[server]){
+            if (sIdx == ServerId || lastLogIndex < NextIndex[server].KV){
                 sIdx = sIdx + 1;
                 continue;
             }
             sendLog = default(seq[Log]);
-            logIdx = NextIndex[server];
-            while(logIdx <= lastLogIndex){
-                sendLog += (logIdx - NextIndex[server], Logs[logIdx]);
+            logIdx = NextIndex[server].KV;
+            while (logIdx <= lastLogIndex){
+                sendLog += (logIdx - NextIndex[server].KV, Logs[logIdx]);
                 logIdx = logIdx + 1;
             }
             print "[Leader | PCR | HeartbeatSendAsLeader] Next index: {0} | sendLog size: {1}", NextIndex[server], sizeof(sendLog);
-            prevLogIndex = NextIndex[server] - 1;
-            prevLogTerm = GetLogTermForIndex(prevLogIndex);
+            prevLogIndex = NextIndex[server].KV - 1;
+            prevLogTerm = GetLogTermForIndex(prevLogIndex, true);
             send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
-                PrevLogTerm=prevLogTerm, Entries=sendLog, LeaderCommit=CommitIndex, ReceiverEndpoint=LastClientRequest.Client);
+                PrevLogTerm=prevLogTerm, Entries=sendLog, LeaderCommit=CommitIndex.KV, ReceiverEndpoint=LastClientRequest.Client);
             sIdx = sIdx + 1;
         } 
     }
@@ -544,9 +544,9 @@ machine Server
         else if (request.Success)
         {
             print "[Leader | AppendEntriesResponse] Success; preparing commit.";
-            NextIndex[request.Server] = sizeof(Logs);
-            MatchIndex[request.Server] = sizeof(Logs) - 1;
-            print "[Leader | AppendEntriesResponse] Updated Indices: NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server], MatchIndex[request.Server];
+            NextIndex[request.Server].KV = sizeof(Logs);
+            MatchIndex[request.Server].KV = sizeof(Logs) - 1;
+            print "[Leader | AppendEntriesResponse] Updated KV Indices: NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server].KV, MatchIndex[request.Server].KV;
             
             VotesReceived = VotesReceived + 1;
             print "[Leader | AppendEntriesResponse] VotesReceived: {0}", VotesReceived;
@@ -559,11 +559,11 @@ machine Server
                 //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
                   //  " | append votes " + this.VotesReceived + " | append success\n");
                 print "\n[Leader] {0} | term {1} | append votes {2} | append success\n", this, CurrentTerm, VotesReceived; 
-                commitIndex = MatchIndex[request.Server];
-                if (commitIndex > CommitIndex &&
+                commitIndex = MatchIndex[request.Server].KV;
+                if (commitIndex > CommitIndex.KV &&
                     Logs[commitIndex - 1].Term == CurrentTerm)
                 {
-                    CommitIndex = commitIndex;
+                    CommitIndex.KV = commitIndex;
 
                    // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | command " + this.Logs[commitIndex - 1].Command + "\n");
                     print "\n[Leader] {0} | term {1} | log {2} | Key {3} | Val {4}\n", this, CurrentTerm, sizeof(Logs), Logs[commitIndex - 1].Key, Logs[commitIndex - 1].Val;
@@ -579,30 +579,30 @@ machine Server
         }
         else
         {
-            if (NextIndex[request.Server] > 0)
+            if (NextIndex[request.Server].KV > 0)
             {
-                NextIndex[request.Server] = NextIndex[request.Server] - 1;
+                NextIndex[request.Server].KV = NextIndex[request.Server].KV - 1;
             }
 
 //            List<Log> logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1, this.Logs.Count - (this.NextIndex[request.Server] - 1));
             logsAppend = default(seq[Log]);
             
-            prevLogIndex = NextIndex[request.Server] - 1;
-            prevLogTerm = GetLogTermForIndex(prevLogIndex);
+            prevLogIndex = NextIndex[request.Server].KV - 1;
+            prevLogTerm = GetLogTermForIndex(prevLogIndex, true);
 
-            idx = NextIndex[request.Server];
+            idx = NextIndex[request.Server].KV;
             
             while (idx < sizeof(Logs)) {
-                logsAppend += (idx - NextIndex[request.Server], Logs[idx]);
+                logsAppend += (idx - NextIndex[request.Server].KV, Logs[idx]);
                 idx = idx + 1;
             }
 
             //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
-            print "\n[Leader] {0} | term {1} | log {2} | append votes {3} | append fail (next idx = {4})\n", this, CurrentTerm, sizeof(Logs), VotesReceived, NextIndex[request.Server];
+            print "\n[Leader] {0} | term {1} | log {2} | append votes {3} | append fail (next idx = {4})\n", this, CurrentTerm, sizeof(Logs), VotesReceived, NextIndex[request.Server].KV;
             send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
-                PrevLogTerm=prevLogTerm, Entries=Logs, LeaderCommit=CommitIndex, ReceiverEndpoint=request.ReceiverEndpoint);
+                PrevLogTerm=prevLogTerm, Entries=Logs, LeaderCommit=CommitIndex.KV, ReceiverEndpoint=request.ReceiverEndpoint);
         }
-        print "[Leader | AppendEntriesResponse] CommitIndex: {0}", CommitIndex;
+        print "[Leader | AppendEntriesResponse] CommitIndex: {0}", CommitIndex.KV;
     }
 
     fun Vote(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
@@ -610,7 +610,7 @@ machine Server
         var lastLogIndex: int;
         var lastLogTerm: int;
         lastLogIndex = sizeof(Logs) - 1;
-        lastLogTerm = GetLogTermForIndex(lastLogIndex);
+        lastLogTerm = GetLogTermForIndex(lastLogIndex, true);
 
         if (request.Term < CurrentTerm ||
             (VotedFor != default(machine) && VotedFor != request.CandidateId) ||
@@ -646,7 +646,7 @@ machine Server
         if (request.Term < CurrentTerm)
         {
             // AppendEntries RPC #1
-            print "\n[Server] {0} | term {1} | log {2} | last applied {3} | append false (<term) \n", this, CurrentTerm, sizeof(Logs), LastApplied;
+            print "\n[Server] {0} | term {1} | log {2} | append false (<term) \n", this, CurrentTerm, sizeof(Logs);
             send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
         }
         else
@@ -656,7 +656,7 @@ machine Server
                 (sizeof(Logs) < request.PrevLogIndex ||
                 Logs[request.PrevLogIndex - 1].Term != request.PrevLogTerm))
             {
-                print "\n[Leader] {0} | term {1} | log {2} | last applied: {3} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs), LastApplied; 
+                print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
             else
@@ -687,22 +687,17 @@ machine Server
                 }
 
                 // AppendEntries RPC #5. Index of last new entry is sizeof(Logs) - 1
-                if (request.LeaderCommit > CommitIndex &&
+                if (request.LeaderCommit > CommitIndex.KV &&
                     (sizeof(Logs) - 1) < request.LeaderCommit)
                 {
-                    CommitIndex = sizeof(Logs) - 1;
+                    CommitIndex.KV = sizeof(Logs) - 1;
                 }
-                else if (request.LeaderCommit > CommitIndex)
+                else if (request.LeaderCommit > CommitIndex.KV)
                 {
-                    CommitIndex = request.LeaderCommit;
+                    CommitIndex.KV = request.LeaderCommit;
                 }
 
-                if (CommitIndex > LastApplied)
-                {
-                    LastApplied = LastApplied + sizeof(request.Entries);
-                }
-
-                print "\n[Server] {0} | term {1} | log {2} | entries received {3} | last applied {4} | append true\n", this, CurrentTerm, sizeof(Logs), sizeof(request.Entries), LastApplied; 
+                print "\n[Server] {0} | term {1} | log {2} | entries received {3} | append true\n", this, CurrentTerm, sizeof(Logs), sizeof(request.Entries); 
 
                 LeaderId = request.LeaderId;
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=true, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
@@ -733,14 +728,19 @@ machine Server
         }
     }
 
-    fun GetLogTermForIndex(logIndex: int) : int
+    fun GetLogTermForIndex(logIndex: int, isKV: bool) : int
     {
         var logTerm: int;
         logTerm = 0;
         print "LogIndex: {0}", logIndex;
         if (logIndex > 0)
         {
-            logTerm = Logs[logIndex].Term;
+            if (isKV){
+                logTerm = Logs[logIndex].Term;
+            }
+            else {
+                logTerm = ConfigLogs[logIndex].Term;
+            }
         }
 
         return logTerm;
