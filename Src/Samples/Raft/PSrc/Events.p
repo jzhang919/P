@@ -8,7 +8,7 @@ event CConfigureEvent: machine;
 event Response;
 event NotifyLeaderElected: int;
 event SConfigureEvent: (Id: int, Servers: seq[machine], ClusterManager: machine);
-event VoteRequest: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int);
+event VoteRequest: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs);
 event VoteResponse: (Term: int, VoteGranted: bool);
 event AppendEntriesRequest: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine);
 event AppendEntriesResponse: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine);
@@ -38,6 +38,6 @@ event EMonitorInit;
 
 type Log = (Term: int, Key: string, Val: string);
 
-type Idxs = (KV: int, Config: int); 
+type Idxs = (KV: int, Cfg: int); 
 
 type Config = (Term: int, Servers: seq[machine]);

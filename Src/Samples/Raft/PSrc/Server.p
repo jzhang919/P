@@ -99,7 +99,7 @@ machine Server
                 send ClusterManager, RedirectRequest, payload;
             }
         }
-        on VoteRequest do (payload: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
+        on VoteRequest do (payload: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs)) {
             print "[Follower | VoteRequest] Server {0} | Payload Term {1} | Current Term {2}", this, payload.Term, CurrentTerm;
             if (payload.Term > CurrentTerm)
             {
@@ -196,7 +196,7 @@ machine Server
             }
         }
         
-        on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)){
+        on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs)){
             print "[Candidate | VoteRequest] Server {0} | Payload Term {1} | Current Term {2}", this, request.Term, CurrentTerm;
             if (request.Term > CurrentTerm)
             {
@@ -285,6 +285,8 @@ machine Server
         var idx: int;
         var lastLogIndex: int;
         var lastLogTerm: int; 
+        var lastCfgLogIndex: int;
+        var lastCfgLogTerm: int;
 
         idx = 0;
         while (idx < sizeof(Servers)) {
@@ -294,9 +296,11 @@ machine Server
            }
             lastLogIndex = sizeof(Logs) - 1;
             lastLogTerm = GetLogTermForIndex(lastLogIndex, true);
+            lastCfgLogIndex = sizeof(ConfigLogs) - 1;
+            lastCfgLogTerm = GetLogTermForIndex(lastCfgLogIndex, false);
 
             print "Sending VoteRequest from Server {0} to Server {1}", this, Servers[idx];
-            send Servers[idx], VoteRequest, (Term=CurrentTerm, CandidateId=this, LastLogIndex=lastLogIndex, LastLogTerm=lastLogTerm);
+            send Servers[idx], VoteRequest, (Term=CurrentTerm, CandidateId=this, LastLogIndex=(KV=lastLogIndex, Cfg=lastCfgLogIndex), LastLogTerm=(KV=lastLogTerm, Cfg=lastCfgLogTerm));
             idx = idx + 1;
         }
     }
@@ -344,8 +348,8 @@ machine Server
                     idx = idx + 1;
                     continue;
                 }
-                NextIndex[Servers[idx]] = (KV=KVLogIndex + 1, Config=ConfigLogIndex + 1);
-                MatchIndex[Servers[idx]] = (KV=0, Config=0);
+                NextIndex[Servers[idx]] = (KV=KVLogIndex + 1, Cfg=ConfigLogIndex + 1);
+                MatchIndex[Servers[idx]] = (KV=0, Cfg=0);
                 idx = idx + 1;
             }
             // HeartbeatSendAsLeader();
@@ -354,7 +358,7 @@ machine Server
         on Request do (payload: (Client: machine, Key: string, Val: string)) {
             ProcessClientRequest(payload);
         }
-        on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int)) {
+        on VoteRequest do (request: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs)) {
             VoteAsLeader(request);
         }
         on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
@@ -476,7 +480,7 @@ machine Server
         } 
     }
 
-    fun VoteAsLeader(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
+    fun VoteAsLeader(request: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs))
     {
         if (request.Term > CurrentTerm)
         {
@@ -605,27 +609,30 @@ machine Server
         print "[Leader | AppendEntriesResponse] CommitIndex: {0}", CommitIndex.KV;
     }
 
-    fun Vote(request: (Term: int, CandidateId: machine, LastLogIndex: int, LastLogTerm: int))
+    fun Vote(request: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs))
     {
         var lastLogIndex: int;
         var lastLogTerm: int;
+        var lastCfgLogIndex: int;
+        var lastCfgLogTerm: int;
+
         lastLogIndex = sizeof(Logs) - 1;
         lastLogTerm = GetLogTermForIndex(lastLogIndex, true);
+        lastCfgLogIndex = sizeof(ConfigLogs) - 1;
+        lastCfgLogTerm = GetLogTermForIndex(lastCfgLogIndex, false);
 
         if (request.Term < CurrentTerm ||
             (VotedFor != default(machine) && VotedFor != request.CandidateId) ||
-            lastLogIndex > request.LastLogIndex ||
-            lastLogTerm > request.LastLogTerm)
+            lastLogIndex > request.LastLogIndex.KV ||
+            lastLogTerm > request.LastLogTerm.KV ||
+            lastCfgLogIndex > request.LastLogIndex.Cfg ||
+            lastCfgLogTerm > request.LastLogTerm.Cfg)
         {
-            //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
-              //  " | log " + this.Logs.Count + " | vote false\n");
             print "\n [Server] {0} | term {1} | log {2} | Reject {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
             send request.CandidateId, VoteResponse, (Term=CurrentTerm, VoteGranted=false);
         }
         else
         {
-            //this.Logger.WriteLine("\n [Server] " + this.ServerId + " | term " + this.CurrentTerm +
-               // " | log " + this.Logs.Count + " | vote true\n");
             print "\n [Server] {0} | term {1} | log {2} | Approve {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
             TickCounter = 0;
 
