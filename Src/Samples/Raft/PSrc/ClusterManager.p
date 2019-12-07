@@ -135,15 +135,25 @@ machine ClusterManager
 				send this, AddServer, payload.Server;
 				raise LocalEvent;
 			} else {
+				Servers += (sizeof(Servers), payload.Server);
 				NumberOfServers = NumberOfServers + 1;
 			}
 		}
 
 		on RemoveServerResponse do (payload: (Server: machine, ServerRemoved: bool)){
+			var idx: int;
+			idx = 0;
 			if (!payload.ServerRemoved){
 				send this, RemoveServer, payload.Server;
 				raise LocalEvent;
 			} else {
+				while (idx < NumberOfServers){
+					if (Servers[idx] == payload.Server){
+						Servers -= idx;
+						break;
+					}
+					idx = idx + 1;
+				} 
 				NumberOfServers = NumberOfServers - 1;
 			}
 		}

@@ -407,6 +407,7 @@ machine Server
     fun AddServerToConfig(server: machine){
         var cfg: Config;
         Servers += (sizeof(Servers), server);
+        send server, SConfigureEvent, (Id = sizeof(Servers) - 1, Servers = Servers, ClusterManager = this);
         NextIndex[server] = (KV=sizeof(Logs), Cfg=sizeof(ConfigLogs));
         MatchIndex[server] = (KV=0, Cfg=0);
         cfg.Term = CurrentTerm;
@@ -750,8 +751,8 @@ machine Server
             // When sending an AppendEntries RPC, the leader includes the index and term of the entry in its log that immediately precedes
             // the new entries. If the follower does not find an entry in its log with the same index and term, then it refuses the new entries
             //TODO WHY NOT STRICT <?
-            if (request.PrevLogIndex.KV > 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
-                request.PrevLogIndex.Cfg > 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
+            if (request.PrevLogIndex.KV >= 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
+                request.PrevLogIndex.Cfg >= 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
                 request.PrevLogIndex.KV > 0 && Logs[request.PrevLogIndex.KV - 1].Term != request.PrevLogTerm.KV) ||
                 request.PrevLogIndex.Cfg > 0 && ConfigLogs[request.PrevLogIndex.Cfg - 1].Term != request.PrevLogTerm.Cfg)
             {
@@ -777,7 +778,7 @@ machine Server
                     }
                     idx = idx + 1;
                 } 
-
+ 
                 while (cfgLogIdx < sizeof(request.CfgEntries) &&
                     (cfgLogIdx + request.PrevLogIndex.Cfg + 1) < sizeof(ConfigLogs)){
                     if (ConfigLogs[cfgLogIdx + request.PrevLogIndex.Cfg + 1] != request.CfgEntries[cfgLogIdx]){
@@ -791,12 +792,14 @@ machine Server
                 // print "Num of entries to add: {0}", sizeof(request.Entries);
                 // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
                 while (idx < sizeof(request.Entries)){
+                    // print "KV Idx: {0}", idx + request.PrevLogIndex.KV + 1;
                     Logs += (idx + request.PrevLogIndex.KV + 1, request.Entries[idx]);
                     idx = idx + 1;
                     kv_success = true;
                 }
 
                 while (cfgLogIdx < sizeof(request.CfgEntries)){
+                    // print "Cfg Idx: {0}", cfgLogIdx + request.PrevLogIndex.Cfg + 1;
                     ConfigLogs += (cfgLogIdx + request.PrevLogIndex.Cfg + 1, request.CfgEntries[cfgLogIdx]);
                     cfgLogIdx = cfgLogIdx + 1;
                     cfg_success = true;
