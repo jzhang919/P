@@ -586,6 +586,7 @@ machine Server
             if (NextIndex[request.Server].KV > 0)
             {
                 NextIndex[request.Server].KV = NextIndex[request.Server].KV - 1;
+                print "NextIndex for {0} is {1}", request.Server, NextIndex[request.Server].KV;
             }
 
 //            List<Log> logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1, this.Logs.Count - (this.NextIndex[request.Server] - 1));
@@ -595,7 +596,9 @@ machine Server
             prevLogTerm = GetLogTermForIndex(prevLogIndex, true);
 
             idx = NextIndex[request.Server].KV;
-            
+            print "prevLogIndex {0}, prevLogTerm {1}, idx {2}", prevLogIndex, prevLogTerm, idx;
+            print "logs {0}", Logs;
+            print "logsize {0}", sizeof(Logs);
             while (idx < sizeof(Logs)) {
                 logsAppend += (idx - NextIndex[request.Server].KV, Logs[idx]);
                 idx = idx + 1;
@@ -604,7 +607,7 @@ machine Server
             //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
             print "\n[Leader] {0} | term {1} | log {2} | append votes {3} | append fail (next idx = {4})\n", this, CurrentTerm, sizeof(Logs), VotesReceived, NextIndex[request.Server].KV;
             send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
-                PrevLogTerm=prevLogTerm, Entries=Logs, LeaderCommit=CommitIndex.KV, ReceiverEndpoint=request.ReceiverEndpoint);
+                PrevLogTerm=prevLogTerm, Entries=logsAppend, LeaderCommit=CommitIndex.KV, ReceiverEndpoint=request.ReceiverEndpoint);
         }
         print "[Leader | AppendEntriesResponse] CommitIndex: {0}", CommitIndex.KV;
     }
@@ -649,7 +652,8 @@ machine Server
         var idx: int;
         var decIdx: int;
         var logEntry: Log;
-
+  print "Logs {0}", Logs;
+                    print "Logsize {0}, request {1}", sizeof(Logs), request;
         if (request.Term < CurrentTerm)
         {
             // AppendEntries RPC #1
@@ -659,21 +663,25 @@ machine Server
         else
         {
             // AppendEntries RPC #2
+            // Consistency check 
+            // When sending an AppendEntries RPC, the leader includes the index and term of the entry in its log that immediately precedes
+            // the new entries. If the follower does not find an entry in its log with the same index and term, then it refuses the new entries
             if (request.PrevLogIndex > 0 &&
-                (sizeof(Logs) < request.PrevLogIndex ||
+                (sizeof(Logs) <= request.PrevLogIndex ||
                 Logs[request.PrevLogIndex - 1].Term != request.PrevLogTerm))
             {
-                print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
+                print "\n[Leader] {0} | term {1} | log {2} | append false (not consistent)\n", this, CurrentTerm, sizeof(Logs); 
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
             else
             {
                 idx = 0;
-                // print "We successfully begin appending.";
                 // On AppendEntries RPC from current leader, reset ElectionTimer
                 if (LeaderId == request.LeaderId) {
                     TickCounter = 0;
                 }
+              
+
                 // AppendEntries RPC #3
                 while (idx < sizeof(request.Entries) && 
                     (idx + request.PrevLogIndex + 1) < sizeof(Logs)){
@@ -689,9 +697,11 @@ machine Server
                 // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
                 while (idx < sizeof(request.Entries)){
                     print "debugging idx {0}", idx;
+                    print "insert index {0}", idx + request.PrevLogIndex + 1;
                     Logs += (idx + request.PrevLogIndex + 1, request.Entries[idx]);
                     idx = idx + 1;
                 }
+                print "finishedloop";
 
                 // AppendEntries RPC #5. Index of last new entry is sizeof(Logs) - 1
                 if (request.LeaderCommit > CommitIndex.KV &&
