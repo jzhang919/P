@@ -465,29 +465,34 @@ machine Server
 
         while (sIdx < sizeof(Servers))
         {
-            // print "On server {0}", sIdx;
             server = Servers[sIdx];
-            if (sIdx == ServerId || lastLogIndex < NextIndex[server].KV || lastCfgLogIndex < NextIndex[server].Cfg){
+            if (sIdx == ServerId){                
                 sIdx = sIdx + 1;
                 continue;
             }
             sendLog = default(seq[Log]);
-            logIdx = NextIndex[server].KV;
-            cfgLogIdx = NextIndex[server].Cfg;
-            while (logIdx <= lastLogIndex){
-                sendLog += (logIdx - NextIndex[server].KV, Logs[logIdx]);
-                logIdx = logIdx + 1;
+            cfgSendLog = default(seq[Config]);
+
+            if (lastLogIndex >= NextIndex[server].KV){
+                logIdx = NextIndex[server].KV;
+                while (logIdx <= lastLogIndex){
+                    sendLog += (logIdx - NextIndex[server].KV, Logs[logIdx]);
+                    logIdx = logIdx + 1;
+                }
             }
-            while (cfgLogIdx <= lastCfgLogIndex){
-                cfgSendLog += (cfgLogIdx - NextIndex[server].Cfg, ConfigLogs[cfgLogIdx]);
-                cfgLogIdx = cfgLogIdx + 1;
+            if (lastCfgLogIndex >= NextIndex[server].Cfg){
+                cfgLogIdx = NextIndex[server].Cfg;
+                while (cfgLogIdx <= lastCfgLogIndex){
+                    cfgSendLog += (cfgLogIdx - NextIndex[server].Cfg, ConfigLogs[cfgLogIdx]);
+                    cfgLogIdx = cfgLogIdx + 1;
+                }
             }
+
             print "[Leader | PCR | HeartbeatSendAsLeader] Next index: {0} | sendLog size: {1}", NextIndex[server], sizeof(sendLog);
             prevLogIndex = NextIndex[server].KV - 1;
             prevLogTerm = GetLogTermForIndex(prevLogIndex, true);
             prevCfgLogIndex = NextIndex[server].Cfg - 1;
             prevCfgLogTerm = GetLogTermForIndex(prevCfgLogIndex, false);
-            //TODO: Fix compile error
             send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=(KV=prevLogIndex, Cfg=prevCfgLogIndex), 
                 PrevLogTerm=(KV=prevLogTerm, Cfg=prevCfgLogTerm), Entries = sendLog, CfgEntries = cfgSendLog, LeaderCommit = CommitIndex, 
                 ReceiverEndpoint=LastClientRequest.Client);
@@ -687,8 +692,8 @@ machine Server
             //TODO WHY NOT STRICT <?
             if (request.PrevLogIndex.KV > 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
                 request.PrevLogIndex.Cfg > 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
-                Logs[request.PrevLogIndex.KV - 1].Term != request.PrevLogTerm.KV) ||
-                ConfigLogs[request.PrevLogIndex.Cfg - 1].Term != request.PrevLogTerm.Cfg)
+                request.PrevLogIndex.KV > 0 && Logs[request.PrevLogIndex.KV - 1].Term != request.PrevLogTerm.KV) ||
+                request.PrevLogIndex.Cfg > 0 && ConfigLogs[request.PrevLogIndex.Cfg - 1].Term != request.PrevLogTerm.Cfg)
             {
                 print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
@@ -725,22 +730,20 @@ machine Server
                 // print "Num of entries to add: {0}", sizeof(request.Entries);
                 // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
                 while (idx < sizeof(request.Entries)){
-                    print "debugging idx {0}", idx;
                     Logs += (idx + request.PrevLogIndex.KV + 1, request.Entries[idx]);
                     idx = idx + 1;
                 }
 
                 while (cfgLogIdx < sizeof(request.CfgEntries)){
-                    print "debugging idx {0}", cfgLogIdx;
                     ConfigLogs += (cfgLogIdx + request.PrevLogIndex.Cfg + 1, request.CfgEntries[cfgLogIdx]);
                     cfgLogIdx = cfgLogIdx + 1;
                 }
 
                 // AppendEntries RPC #5. Index of last new entry is sizeof(Logs) - 1
-                if (request.LeaderCommit.KV > CommitIndex.KV &&
-                    sizeof(Logs) <= request.LeaderCommit.KV &&
-                    request.LeaderCommit.Cfg > CommitIndex.Cfg &&
-                    sizeof(ConfigLogs) <= request.LeaderCommit.Cfg)
+                if ((request.LeaderCommit.KV > CommitIndex.KV &&
+                    sizeof(Logs) <= request.LeaderCommit.KV) ||
+                    (request.LeaderCommit.Cfg > CommitIndex.Cfg &&
+                    sizeof(ConfigLogs) <= request.LeaderCommit.Cfg))
                 {
                     CommitIndex = (KV = sizeof(Logs) - 1, Cfg = sizeof(ConfigLogs) - 1);   
                 }
