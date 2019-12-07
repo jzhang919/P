@@ -11,7 +11,7 @@ event SConfigureEvent: (Id: int, Servers: seq[machine], ClusterManager: machine)
 event VoteRequest: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs2);
 event VoteResponse: (Term: int, VoteGranted: bool);
 event AppendEntriesRequest: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs2, Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs3, ReceiverEndpoint: machine);
-event AppendEntriesResponse: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine);
+event AppendEntriesResponse: (Term: int, Success: bool, KV: bool, Cfg:bool, Server: machine, ReceiverEndpoint: machine);
 event BecomeFollower;
 event BecomeCandidate;
 event BecomeLeader;
