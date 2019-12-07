@@ -20,6 +20,11 @@ machine Server
     var VotesReceived: int;
     var LastClientRequest: (Client: machine, Key: string, Val: string);
 
+    // Server to be added or removed from configuration.
+    var UpdateServer: machine;
+    //0 if no update; 1 if add; 2 if remove
+    var UpdateType: int;
+
     var MaxTicks: int;  // Randomly set ceiling for tick count
     var TickCounter: int; // Ticks seen so far. Reset at certain points.
 
@@ -35,6 +40,9 @@ machine Server
             CommitIndex = default(Idxs);
             NextIndex = default(map[machine, Idxs]);
             MatchIndex = default(map[machine, Idxs]);
+
+            UpdateServer = default(machine);
+            UpdateType = 0;
         }
 
         /*
@@ -119,8 +127,8 @@ machine Server
             }
         }
 
-        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
-            PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)){
+        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
+            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)){
             print "[Follower | AppendEntriesRequest] Server {0}", this;
             if (request.Term > CurrentTerm)
             {
@@ -131,7 +139,7 @@ machine Server
         }
 
         // TODO: see if this ever shows up. It doesn't really make sense for a follower to receive an append entries response
-        on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine,
+        on AppendEntriesResponse do (request: (Term: int, Success: bool, KV: bool, Cfg: bool, Server: machine,
          ReceiverEndpoint: machine)){
             print "[Follower | AppendEntriesResponse] Server {0}", this;
             if (request.Term > CurrentTerm)
@@ -237,8 +245,8 @@ machine Server
             }
         }
         // TODO: Confirm that commenting out AppendEntries below is correct
-        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int,
-         Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)) {
+        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
+            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)){
             print "[Candidate | AppendEntriesRequest] Server {0}", this;
             if (request.Term > CurrentTerm)
             {
@@ -252,7 +260,7 @@ machine Server
                 AppendEntries(request);
             }
         }
-        on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
+        on AppendEntriesResponse do (request: (Term: int, Success: bool, KV: bool, Cfg: bool, Server: machine, ReceiverEndpoint: machine)) {
             print "[Candidate | AppendEntriesResponse] Server {0}", this;
             RespondAppendEntriesAsCandidate(request);
         }
@@ -305,7 +313,7 @@ machine Server
         }
     }
 
-    fun RespondAppendEntriesAsCandidate(request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine))
+    fun RespondAppendEntriesAsCandidate(request: (Term: int, Success: bool, KV:bool, Cfg:bool, Server: machine, ReceiverEndpoint: machine))
     {
         if (request.Term > CurrentTerm)
         {
@@ -364,20 +372,22 @@ machine Server
         on VoteResponse do (request: (Term: int, VoteGranted: bool)) {
             RespondVoteAsLeader(request);
         }
-        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: int, 
-            PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine)) {
+        on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
+            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)){
             AppendEntriesAsLeader(request);
         }
-        on AppendEntriesResponse do (request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine)) {
+        on AppendEntriesResponse do (request: (Term: int, Success: bool, KV: bool, Cfg: bool, Server: machine, ReceiverEndpoint: machine)) {
             RespondAppendEntriesAsLeader(request);
         }
         on AddServer do (server: machine){
+            UpdateServer = server;
+            UpdateType = 1;
             AddServerToConfig(server);
-            UpdateFollowerConfigs();
         }
         on RemoveServer do (server: machine){
+            UpdateServer = server;
+            UpdateType = 2;
             RemoveServerFromConfig(server);
-            UpdateFollowerConfigs();
         }
 
         on ShutDown do ShuttingDown;
@@ -395,12 +405,20 @@ machine Server
     }
 
     fun AddServerToConfig(server: machine){
+        var cfg: Config;
         Servers += (sizeof(Servers), server);
+        NextIndex[server] = (KV=sizeof(Logs), Cfg=sizeof(ConfigLogs));
+        MatchIndex[server] = (KV=0, Cfg=0);
+        cfg.Term = CurrentTerm;
+        cfg.Servers = Servers;
+        ConfigLogs += (sizeof(ConfigLogs), cfg);
     }
 
     fun RemoveServerFromConfig(server: machine){
         var idx: int;
         var sIdx: int;
+        var cfg: Config;
+
         idx = 0;
         sIdx = -1;
 
@@ -415,6 +433,9 @@ machine Server
         if (sIdx >= 0 && sIdx < sizeof(Servers)){
             Servers -= sIdx;
         }
+        cfg.Term = CurrentTerm;
+        cfg.Servers = Servers;
+        ConfigLogs += (sizeof(ConfigLogs), cfg);     
     }
 
     fun UpdateFollowerConfigs (){
@@ -424,14 +445,18 @@ machine Server
     fun ProcessClientRequest(trigger: (Client: machine, Key: string, Val: string))
     {
         var log: Log;
+        var cfg: Config;
+
         print "[Leader | Request] Leader {0} processing Client {1}", this, trigger.Client;
         LastClientRequest = trigger;
+        if ($)
         log = default(Log);
         log.Term = CurrentTerm;
         log.Key = LastClientRequest.Key;
         log.Val = LastClientRequest.Val;
         print "[Leader | Request] Log Term: {0}, Log Key: {1}, Log Val: {2}, idx: {3}", log.Term, log.Key, log.Val, sizeof(Logs);
         Logs += (sizeof(Logs), log);
+        
         print "[Leader | Request] Printing Log";
         PrintLog();
     }
@@ -443,41 +468,67 @@ machine Server
             print "[PrintLog] Log element {0}: {1}", idx, Logs[idx];
             idx = idx + 1;
         }
+        idx = 0;
+        while (idx < sizeof(ConfigLogs)){
+            print "[ConfigLog] Log element {0}: {1}", idx, ConfigLogs[idx];
+            idx = idx + 1;
+        }
+        print "\n\n SIZE OF KV: {0}, CONFIG: {1} \n\n", sizeof(Logs), sizeof(ConfigLogs);
     }
 
     fun HeartbeatSendAsLeader(){
         var lastLogIndex: int;
+        var lastCfgLogIndex: int;
         var sIdx: int;
         var logIdx: int;
+        var cfgLogIdx: int;
         var server: machine;
         var sendLog: seq[Log];
+        var cfgSendLog: seq[Config];
         var prevLogIndex: int;
         var prevLogTerm: int;
+        var prevCfgLogIndex: int;
+        var prevCfgLogTerm: int;
 
         lastLogIndex = sizeof(Logs) - 1;
+        lastCfgLogIndex = sizeof(ConfigLogs) - 1;
         print "\n[Leader | PCR | HeartbeatSendAsLeader] [Leader] {0} sends append requests | term {1} | lastLogIndex: {2}\n", this, CurrentTerm, lastLogIndex;
 
         while (sIdx < sizeof(Servers))
         {
-            // print "On server {0}", sIdx;
             server = Servers[sIdx];
-            if (sIdx == ServerId || lastLogIndex < NextIndex[server].KV){
+            if (sIdx == ServerId){                
                 sIdx = sIdx + 1;
                 continue;
             }
             sendLog = default(seq[Log]);
-            logIdx = NextIndex[server].KV;
-            while (logIdx <= lastLogIndex){
-                sendLog += (logIdx - NextIndex[server].KV, Logs[logIdx]);
-                logIdx = logIdx + 1;
+            cfgSendLog = default(seq[Config]);
+
+            if (lastLogIndex >= NextIndex[server].KV){
+                logIdx = NextIndex[server].KV;
+                while (logIdx <= lastLogIndex){
+                    sendLog += (logIdx - NextIndex[server].KV, Logs[logIdx]);
+                    logIdx = logIdx + 1;
+                }
             }
+            if (lastCfgLogIndex >= NextIndex[server].Cfg){
+                cfgLogIdx = NextIndex[server].Cfg;
+                while (cfgLogIdx <= lastCfgLogIndex){
+                    cfgSendLog += (cfgLogIdx - NextIndex[server].Cfg, ConfigLogs[cfgLogIdx]);
+                    cfgLogIdx = cfgLogIdx + 1;
+                }
+            }
+
             print "[Leader | PCR | HeartbeatSendAsLeader] Next index: {0} | sendLog size: {1}", NextIndex[server], sizeof(sendLog);
             prevLogIndex = NextIndex[server].KV - 1;
             prevLogTerm = GetLogTermForIndex(prevLogIndex, true);
-            send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
-                PrevLogTerm=prevLogTerm, Entries=sendLog, LeaderCommit=CommitIndex.KV, ReceiverEndpoint=LastClientRequest.Client);
+            prevCfgLogIndex = NextIndex[server].Cfg - 1;
+            prevCfgLogTerm = GetLogTermForIndex(prevCfgLogIndex, false);
+            send server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=(KV=prevLogIndex, Cfg=prevCfgLogIndex), 
+                PrevLogTerm=(KV=prevLogTerm, Cfg=prevCfgLogTerm), Entries = sendLog, CfgEntries = cfgSendLog, LeaderCommit = CommitIndex, 
+                ReceiverEndpoint=LastClientRequest.Client);
             sIdx = sIdx + 1;
-        } 
+        }
     }
 
     fun VoteAsLeader(request: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs))
@@ -510,7 +561,8 @@ machine Server
         }
     }
 
-    fun AppendEntriesAsLeader(request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine))
+    fun AppendEntriesAsLeader(request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
+            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine))
     {
         if (request.Term > CurrentTerm)
         {
@@ -523,13 +575,17 @@ machine Server
         }
     }
 
-    fun RespondAppendEntriesAsLeader(request: (Term: int, Success: bool, Server: machine, ReceiverEndpoint: machine))
+    fun RespondAppendEntriesAsLeader(request: (Term: int, Success: bool, KV: bool, Cfg: bool, Server: machine, ReceiverEndpoint: machine))
     {
-        var commitIndex: int;
         var logsAppend: seq[Log];
+        var cfgLogsAppend: seq[Config];
         var prevLogIndex: int;
         var prevLogTerm: int; 
+        var prevCfgLogIndex: int;
+        var prevCfgLogTerm: int;
         var idx: int;
+        var cfgLogIdx: int;
+
         print "[Leader | AppendEntriesResponse] {0} received response {1} from server {2}", this, request.Success, request.Server; 
         print "[Leader | AppendEntriesResponse] Leader term: {0}, follower term: {1}", CurrentTerm, request.Term;
         if (request.Term > CurrentTerm)
@@ -548,8 +604,15 @@ machine Server
         else if (request.Success)
         {
             print "[Leader | AppendEntriesResponse] Success; preparing commit.";
-            NextIndex[request.Server].KV = sizeof(Logs);
-            MatchIndex[request.Server].KV = sizeof(Logs) - 1;
+            if (request.KV){
+                NextIndex[request.Server].KV = sizeof(Logs);
+                MatchIndex[request.Server].KV = sizeof(Logs) - 1;                
+            }
+            if (request.Cfg){
+                NextIndex[request.Server].Cfg = sizeof(ConfigLogs);
+                MatchIndex[request.Server].Cfg = sizeof(ConfigLogs) - 1;  
+            }
+
             print "[Leader | AppendEntriesResponse] Updated KV Indices: NextIndex: {0}, MatchIndex: {1}", NextIndex[request.Server].KV, MatchIndex[request.Server].KV;
             
             VotesReceived = VotesReceived + 1;
@@ -560,18 +623,17 @@ machine Server
             }        
             else if (VotesReceived > (sizeof(Servers)-1) / 2)
             {
-                //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
-                  //  " | append votes " + this.VotesReceived + " | append success\n");
                 print "\n[Leader] {0} | term {1} | append votes {2} | append success\n", this, CurrentTerm, VotesReceived; 
-                commitIndex = MatchIndex[request.Server].KV;
-                if (commitIndex > CommitIndex.KV &&
-                    Logs[commitIndex - 1].Term == CurrentTerm)
+                if (request.KV && MatchIndex[request.Server].KV > CommitIndex.KV &&
+                    Logs[MatchIndex[request.Server].KV - 1].Term == CurrentTerm)
                 {
-                    CommitIndex.KV = commitIndex;
-
-                   // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | command " + this.Logs[commitIndex - 1].Command + "\n");
-                    print "\n[Leader] {0} | term {1} | log {2} | Key {3} | Val {4}\n", this, CurrentTerm, sizeof(Logs), Logs[commitIndex - 1].Key, Logs[commitIndex - 1].Val;
-
+                    CommitIndex.KV = MatchIndex[request.Server].KV;
+                    print "\n[Leader] {0} | term {1} | log {2} | Key {3} | Val {4}\n", this, CurrentTerm, sizeof(Logs), Logs[MatchIndex[request.Server].KV - 1].Key, Logs[MatchIndex[request.Server].KV - 1].Val;
+                }
+                if (request.Cfg && MatchIndex[request.Server].Cfg > CommitIndex.Cfg &&
+                    ConfigLogs[MatchIndex[request.Server].Cfg -1].Term == CurrentTerm)
+                {
+                    CommitIndex.Cfg = MatchIndex[request.Server].Cfg;
                 }
 
                 VotesReceived = 0;
@@ -579,6 +641,16 @@ machine Server
                 LastClientRequest = (Client=default(machine), Key=default(string), Val=default(string));
 
                 send request.ReceiverEndpoint, Response;
+                if (request.Cfg){
+                    if (UpdateType == 1){
+                        send ClusterManager, AddServerResponse, (Server=UpdateServer, ServerAdded=true);
+                    }
+                    if (UpdateType == 2){
+                        send ClusterManager, RemoveServerResponse, (Server=UpdateServer, ServerRemoved=true);
+                    }
+                    UpdateServer = default(machine);
+                    UpdateType = 0;
+                }
             }
         }
         else
@@ -589,25 +661,33 @@ machine Server
                 print "NextIndex for {0} is {1}", request.Server, NextIndex[request.Server].KV;
             }
 
-//            List<Log> logs = this.Logs.GetRange(this.NextIndex[request.Server] - 1, this.Logs.Count - (this.NextIndex[request.Server] - 1));
             logsAppend = default(seq[Log]);
             
             prevLogIndex = NextIndex[request.Server].KV - 1;
             prevLogTerm = GetLogTermForIndex(prevLogIndex, true);
+            prevCfgLogIndex = NextIndex[request.Server].Cfg - 1;
+            prevCfgLogTerm = GetLogTermForIndex(prevCfgLogIndex, false);
 
             idx = NextIndex[request.Server].KV;
-            print "prevLogIndex {0}, prevLogTerm {1}, idx {2}", prevLogIndex, prevLogTerm, idx;
-            print "logs {0}", Logs;
-            print "logsize {0}", sizeof(Logs);
+            cfgLogIdx = NextIndex[request.Server].Cfg;
+
             while (idx < sizeof(Logs)) {
                 logsAppend += (idx - NextIndex[request.Server].KV, Logs[idx]);
                 idx = idx + 1;
             }
 
+            while (cfgLogIdx < sizeof(ConfigLogs)){
+                cfgLogsAppend += (cfgLogIdx - NextIndex[request.Server].Cfg, ConfigLogs[cfgLogIdx]);
+                cfgLogIdx = cfgLogIdx + 1;
+            }
+
             //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
             print "\n[Leader] {0} | term {1} | log {2} | append votes {3} | append fail (next idx = {4})\n", this, CurrentTerm, sizeof(Logs), VotesReceived, NextIndex[request.Server].KV;
-            send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=prevLogIndex,
-                PrevLogTerm=prevLogTerm, Entries=logsAppend, LeaderCommit=CommitIndex.KV, ReceiverEndpoint=request.ReceiverEndpoint);
+            //TODO FIX THIS
+            send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=(KV=prevLogIndex, Cfg=prevCfgLogIndex), 
+                PrevLogTerm=(KV=prevLogTerm, Cfg=prevCfgLogTerm), Entries = logsAppend, CfgEntries = cfgLogsAppend, LeaderCommit = CommitIndex, 
+                ReceiverEndpoint=LastClientRequest.Client);
+
         }
         print "[Leader | AppendEntriesResponse] CommitIndex: {0}", CommitIndex.KV;
     }
@@ -646,19 +726,22 @@ machine Server
         }
     }
 
-    fun AppendEntries(request: (Term: int, LeaderId: machine, PrevLogIndex: int, PrevLogTerm: int, Entries: seq[Log], LeaderCommit: int, ReceiverEndpoint: machine))
+    fun AppendEntries(request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
+            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine))
     {
-        var startIndex: int;
         var idx: int;
-        var decIdx: int;
-        var logEntry: Log;
-  print "Logs {0}", Logs;
-                    print "Logsize {0}, request {1}", sizeof(Logs), request;
+        var cfgLogIdx: int;
+        var cfg_success: bool;
+        var kv_success: bool;
+
+        cfg_success = false;
+        kv_success = false;
+
         if (request.Term < CurrentTerm)
         {
             // AppendEntries RPC #1
             print "\n[Server] {0} | term {1} | log {2} | append false (<term) \n", this, CurrentTerm, sizeof(Logs);
-            send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
+            send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
         }
         else
         {
@@ -666,12 +749,14 @@ machine Server
             // Consistency check 
             // When sending an AppendEntries RPC, the leader includes the index and term of the entry in its log that immediately precedes
             // the new entries. If the follower does not find an entry in its log with the same index and term, then it refuses the new entries
-            if (request.PrevLogIndex > 0 &&
-                (sizeof(Logs) <= request.PrevLogIndex ||
-                Logs[request.PrevLogIndex - 1].Term != request.PrevLogTerm))
+            //TODO WHY NOT STRICT <?
+            if (request.PrevLogIndex.KV > 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
+                request.PrevLogIndex.Cfg > 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
+                request.PrevLogIndex.KV > 0 && Logs[request.PrevLogIndex.KV - 1].Term != request.PrevLogTerm.KV) ||
+                request.PrevLogIndex.Cfg > 0 && ConfigLogs[request.PrevLogIndex.Cfg - 1].Term != request.PrevLogTerm.Cfg)
             {
-                print "\n[Leader] {0} | term {1} | log {2} | append false (not consistent)\n", this, CurrentTerm, sizeof(Logs); 
-                send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
+                print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
+                send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
             else
             {
@@ -684,40 +769,62 @@ machine Server
 
                 // AppendEntries RPC #3
                 while (idx < sizeof(request.Entries) && 
-                    (idx + request.PrevLogIndex + 1) < sizeof(Logs)){
-                    if (Logs[idx + request.PrevLogIndex + 1] != request.Entries[idx]){
-                        print "[Follower | AppendEntries] Conflict: Deleting from log entry {0} on", idx + request.PrevLogIndex + 1;
-                        DeleteFromLog(idx + request.PrevLogIndex + 1, sizeof(Logs));
+                    (idx + request.PrevLogIndex.KV + 1) < sizeof(Logs)){
+                    if (Logs[idx + request.PrevLogIndex.KV + 1] != request.Entries[idx]){
+                        print "[Follower | AppendEntries] Conflict: Deleting from log entry {0} on", idx + request.PrevLogIndex.KV + 1;
+                        DeleteFromLog(idx + request.PrevLogIndex.KV + 1, sizeof(Logs), true);
                         break;
                     }
                     idx = idx + 1;
                 } 
 
+                while (cfgLogIdx < sizeof(request.CfgEntries) &&
+                    (cfgLogIdx + request.PrevLogIndex.Cfg + 1) < sizeof(ConfigLogs)){
+                    if (ConfigLogs[cfgLogIdx + request.PrevLogIndex.Cfg + 1] != request.CfgEntries[cfgLogIdx]){
+                        print "[Follower | AppendEntries] Conflict: Deleting from config log entry {0} on", cfgLogIdx + request.PrevLogIndex.Cfg + 1;
+                        DeleteFromLog(cfgLogIdx + request.PrevLogIndex.Cfg + 1, sizeof(ConfigLogs), false);
+                        break;
+                    }
+                    cfgLogIdx = cfgLogIdx + 1;
+                }
+
                 // print "Num of entries to add: {0}", sizeof(request.Entries);
                 // AppendEntries RPC #4. Note we explicitly DO NOT reset idx.
                 while (idx < sizeof(request.Entries)){
-                    print "debugging idx {0}", idx;
-                    print "insert index {0}", idx + request.PrevLogIndex + 1;
-                    Logs += (idx + request.PrevLogIndex + 1, request.Entries[idx]);
+                    Logs += (idx + request.PrevLogIndex.KV + 1, request.Entries[idx]);
                     idx = idx + 1;
+                    kv_success = true;
+                }
+
+                while (cfgLogIdx < sizeof(request.CfgEntries)){
+                    ConfigLogs += (cfgLogIdx + request.PrevLogIndex.Cfg + 1, request.CfgEntries[cfgLogIdx]);
+                    cfgLogIdx = cfgLogIdx + 1;
+                    cfg_success = true;
+                }
+
+                if (sizeof(request.CfgEntries) > 0){
+                    Servers = ConfigLogs[sizeof(ConfigLogs) - 1].Servers;
                 }
                 print "finishedloop";
 
                 // AppendEntries RPC #5. Index of last new entry is sizeof(Logs) - 1
-                if (request.LeaderCommit > CommitIndex.KV &&
-                    (sizeof(Logs) - 1) < request.LeaderCommit)
+                if ((request.LeaderCommit.KV > CommitIndex.KV &&
+                    sizeof(Logs) <= request.LeaderCommit.KV) ||
+                    (request.LeaderCommit.Cfg > CommitIndex.Cfg &&
+                    sizeof(ConfigLogs) <= request.LeaderCommit.Cfg))
                 {
-                    CommitIndex.KV = sizeof(Logs) - 1;
+                    CommitIndex = (KV = sizeof(Logs) - 1, Cfg = sizeof(ConfigLogs) - 1);   
                 }
-                else if (request.LeaderCommit > CommitIndex.KV)
+                else if (request.LeaderCommit.KV > CommitIndex.KV &&
+                    request.LeaderCommit.Cfg > CommitIndex.Cfg)
                 {
-                    CommitIndex.KV = request.LeaderCommit;
+                    CommitIndex = request.LeaderCommit;
                 }
 
                 print "\n[Server] {0} | term {1} | log {2} | entries received {3} | append true\n", this, CurrentTerm, sizeof(Logs), sizeof(request.Entries); 
 
                 LeaderId = request.LeaderId;
-                send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=true, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
+                send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=true, KV=kv_success, Cfg=cfg_success, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
             }
         }
     }
@@ -726,12 +833,18 @@ machine Server
         @param start: Inclusive, first index to delete.
         @param end: Exclusive, delete up to but not including this index.
     */
-    fun DeleteFromLog(startIndex: int, endIndex: int)
+    fun DeleteFromLog(startIndex: int, endIndex: int, isKV: bool)
     {
         var idx: int;
         idx = endIndex - 1;
-        while (idx >= startIndex){
-            Logs -= idx;
+        if (isKV){
+            while (idx >= startIndex){
+                Logs -= idx;
+            }
+        } else {
+            while (idx >= startIndex){
+                ConfigLogs -= idx;
+            }
         }
     }
 

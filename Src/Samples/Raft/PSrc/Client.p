@@ -9,7 +9,7 @@ machine Client
     var LatestKey: string;
     var LatestVal: string;
     var Counter: int;
-
+    var UpdateServer: machine;
 
     start state Init
     {
@@ -70,6 +70,10 @@ machine Client
     fun ProcessResponse()
     {
         print "In ProcessResponse of Client";
+        if (Counter == 20){
+            UpdateServer = new Server();
+            send Cluster, AddServer, UpdateServer;
+        }
         if (Counter == 100)
         {
 
