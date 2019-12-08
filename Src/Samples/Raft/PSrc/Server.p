@@ -335,8 +335,7 @@ machine Server
 
             CommitIndex = default(Idxs);                                                                              
 
-            announce EMonitorInit, (NotifyLeaderElected, CurrentTerm);
-            //monitor<SafetyMonitor>(NotifyLeaderElected, CurrentTerm);
+            announce M_NotifyLeaderElected, CurrentTerm;
             send ClusterManager, NotifyLeaderUpdate, (Leader=this, Term=CurrentTerm);
             
             // Fixed Leader MaxTicks. Used for heartbeat
@@ -457,7 +456,8 @@ machine Server
         log.Val = LastClientRequest.Val;
         print "[Leader | Request] Log Term: {0}, Log Key: {1}, Log Val: {2}, idx: {3}", log.Term, log.Key, log.Val, sizeof(Logs);
         Logs += (sizeof(Logs), log);
-        
+        announce M_LogAppend, (Server=this, Logs=Logs);
+
         print "[Leader | Request] Printing Log";
         PrintLog();
     }
@@ -630,6 +630,7 @@ machine Server
                 {
                     CommitIndex.KV = MatchIndex[request.Server].KV;
                     print "\n[Leader] {0} | term {1} | log {2} | Key {3} | Val {4}\n", this, CurrentTerm, sizeof(Logs), Logs[MatchIndex[request.Server].KV - 1].Key, Logs[MatchIndex[request.Server].KV - 1].Val;
+
                 }
                 if (request.Cfg && MatchIndex[request.Server].Cfg > CommitIndex.Cfg &&
                     ConfigLogs[MatchIndex[request.Server].Cfg -1].Term == CurrentTerm)
@@ -794,6 +795,7 @@ machine Server
                 while (idx < sizeof(request.Entries)){
                     // print "KV Idx: {0}", idx + request.PrevLogIndex.KV + 1;
                     Logs += (idx + request.PrevLogIndex.KV + 1, request.Entries[idx]);
+                    announce M_LogAppend, (Server=this, Logs=Logs);
                     idx = idx + 1;
                     kv_success = true;
                 }

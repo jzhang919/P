@@ -6,7 +6,6 @@ event MakeUnavailable;
 event LocalEvent;
 event CConfigureEvent: machine;
 event Response;
-event NotifyLeaderElected: int;
 event SConfigureEvent: (Id: int, Servers: seq[machine], ClusterManager: machine);
 event VoteRequest: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs2);
 event VoteResponse: (Term: int, VoteGranted: bool);
@@ -34,7 +33,8 @@ event RemoveServerResponse: (Server: machine, ServerRemoved: bool);
 event UpdateServers: seq[machine];
 event UpdateServersResponse: bool;
 
-event EMonitorInit;
+event M_LogAppend: (Server: machine, Logs: seq[Log]); // Used to indicate to the Monitor that a Log is being appended.
+event M_NotifyLeaderElected: int;
 
 type Log = (Term: int, Key: string, Val: string);
 
