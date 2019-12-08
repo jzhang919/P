@@ -253,8 +253,8 @@ machine Server
 
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
             Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)){
+            var success: bool;
             print "[Candidate | AppendEntriesRequest] Server {0}", this;
-            
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -264,8 +264,12 @@ machine Server
             }
             else
             {
-                
-                AppendEntries(request);
+                success = AppendEntries(request);
+                if (success) {
+                    // If a candidate successfully appendsEntry from another server, it should revert back to the candidate state.
+                    // Note: this seems to happen in the case the request.Term == CurrentTerm
+                    raise BecomeFollower;
+                }
             }
         }
         on AppendEntriesResponse do (request: (Term: int, Success: bool, KV: bool, Cfg: bool, Server: machine, ReceiverEndpoint: machine)) {
@@ -586,6 +590,8 @@ machine Server
     {
         if (request.Term > CurrentTerm)
         {
+            // Leader must have somehow been disconnected from the network?
+            print "AppendEntriesAsLeader";
             CurrentTerm = request.Term;
             VotedFor = default(machine);
 
