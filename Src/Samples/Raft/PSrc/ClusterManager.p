@@ -11,6 +11,7 @@ machine ClusterManager
 	var LeaderTerm: int;
 	var Client: machine;
 	var Timer: machine;
+	var UpdatingConfig: bool;
 
 	start state Init
 	{
@@ -18,12 +19,13 @@ machine ClusterManager
 		{
 			var idx: int;
 			var mac: machine;
-			NumberOfServers = 5;
+			NumberOfServers = 2;
 			LeaderTerm = -1;
 			idx = 0;
 			Servers = default(seq[machine]);
-			print "clustermanager";
+			UpdatingConfig = false;
 
+			print "clustermanager";
 			while(idx < NumberOfServers)
 			{	
 				mac = new Server();
@@ -123,14 +125,25 @@ machine ClusterManager
 			UpdateLeader(payload);
 		}
 		on AddServer do (server: machine){
-			AddServerToCluster(server);
+			if (UpdatingConfig)
+			{
+				send this, AddServer, server;
+			} else {
+				AddServerToCluster(server);
+			}
 		}
 
 		on RemoveServer do (server: machine){
-			RemoveServerFromCluster(server);
+			if (UpdatingConfig)
+			{
+				send this, AddServer, server;
+			} else {
+				RemoveServerFromCluster(server);
+			}	
 		}
 
 		on AddServerResponse do (payload: (Server: machine, ServerAdded: bool)){
+			UpdatingConfig = false;
 			if (!payload.ServerAdded){
 				send this, AddServer, payload.Server;
 				raise LocalEvent;
@@ -167,10 +180,12 @@ machine ClusterManager
 	}
 
     fun AddServerToCluster(server: machine){
+    	UpdatingConfig = true;
     	send Leader, AddServer, server;
     }
 
     fun RemoveServerFromCluster(server: machine){
+    	UpdatingConfig = true;
     	send Leader, RemoveServer, server;
     }
 }

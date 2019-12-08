@@ -450,7 +450,6 @@ machine Server
 
         print "[Leader | Request] Leader {0} processing Client {1}", this, trigger.Client;
         LastClientRequest = trigger;
-        if ($)
         log = default(Log);
         log.Term = CurrentTerm;
         log.Key = LastClientRequest.Key;
