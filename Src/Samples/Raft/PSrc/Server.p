@@ -335,7 +335,7 @@ machine Server
 
             CommitIndex = default(Idxs);                                                                              
 
-            announce M_NotifyLeaderElected, CurrentTerm;
+            announce M_NotifyLeaderElected, (Term=CurrentTerm, Logs=Logs);
             send ClusterManager, NotifyLeaderUpdate, (Leader=this, Term=CurrentTerm);
             
             // Fixed Leader MaxTicks. Used for heartbeat
@@ -643,6 +643,7 @@ machine Server
                 LastClientRequest = (Client=default(machine), Key=default(string), Val=default(string));
 
                 send request.ReceiverEndpoint, Response;
+                announce M_LeaderCommitted, Logs;
                 if (request.Cfg){
                     if (UpdateType == 1){
                         send ClusterManager, AddServerResponse, (Server=UpdateServer, ServerAdded=true);

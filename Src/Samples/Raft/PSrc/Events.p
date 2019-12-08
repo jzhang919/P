@@ -33,8 +33,10 @@ event RemoveServerResponse: (Server: machine, ServerRemoved: bool);
 event UpdateServers: seq[machine];
 event UpdateServersResponse: bool;
 
+// Events specifically announced for the SafetyMonitor
 event M_LogAppend: (Server: machine, Logs: seq[Log]); // Used to indicate to the Monitor that a Log is being appended.
-event M_NotifyLeaderElected: int;
+event M_NotifyLeaderElected: (Term: int, Logs: seq[Log]);
+event M_LeaderCommitted: seq[Log];
 
 type Log = (Term: int, Key: string, Val: string);
 

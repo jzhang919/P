@@ -6,17 +6,20 @@
 // State Machine Safety: if a server has applied a particular log entry to its state machine, then no other server may apply a different command for the same log.
 
 
-spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected
+spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitted
 {
-	//unused: int CurrentTerm;
+	var CurrentTerm: int;
 	var TermsWithLeader: map[int, bool];
-	var ServerLogs: map[machine, seq[Log]]; // Map from every Server to its Logs.
+	// Map from every Server to its Logs.
+	var ServerLogs: map[machine, seq[Log]];
+	// Map from a term to the latest committed Log for the term. IE, when leader commits, the latest committed log for the current term is updated.
+	var CommittedLogs: map[int, seq[Log]];
 
 	start state Init
 	{
 		entry
 		{
-			//this.CurrentTerm = -1;
+			CurrentTerm = -1;
 			TermsWithLeader = default(map[int, bool]);
 			raise LocalEvent;
 		}
@@ -26,26 +29,50 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected
 
 	state Monitoring
 	{
-		on M_NotifyLeaderElected do (payload: int) {
-			ProcessLeaderElected(payload);
+		on M_NotifyLeaderElected do (payload: (Term: int, Logs: seq[Log])) {
+			ProcessLeaderElected(payload.Term, payload.Logs);
 		}
 
 		on M_LogAppend do (payload: (Server: machine, Logs: seq[Log])) {
 			ProcessLogAppend(payload.Server, payload.Logs);
 		}
 
+		on M_LeaderCommitted do (payload: seq[Log]) {
+			CommittedLogs[CurrentTerm] = payload;
+		}
+
 
 	}
 
-	fun ProcessLeaderElected(payload: int)
+	fun ProcessLeaderElected(Term: int, Logs: seq[Log])
     {
-        var term: int;
-        term = payload;
-        if (term in TermsWithLeader){
-        	print "Detected more than one leader in term {0}", term;
+		var i: int;
+		var j: int;
+		var PrevCommitted: seq[Log];
+		var terms: seq[int];
+		// Terms should be increasing
+		assert(Term > CurrentTerm);
+		CurrentTerm = Term;
+        if (CurrentTerm in TermsWithLeader){
+        	print "Detected more than one leader in term {0}", CurrentTerm;
         }
-        assert(!(term in TermsWithLeader));
-        TermsWithLeader[term] = true;
+        assert(!(CurrentTerm in TermsWithLeader));
+        TermsWithLeader[CurrentTerm] = true;
+
+		// The newly elected leader should have all previously committed log entries from previous terms.
+		terms = keys(CommittedLogs);
+		while (i < sizeof(terms)) {
+			PrevCommitted = CommittedLogs[terms[i]];
+			assert(sizeof(Logs) >= sizeof(PrevCommitted));
+			while (j < sizeof(PrevCommitted)) {
+				if (PrevCommitted[j] != Logs[j]) {
+					print "Newly elected leader should have all previously committed log entries from previous terms."
+				}
+				assert(PrevCommitted[j] == Logs[j]);
+				j = j + 1;
+			}
+			i = i + 1;
+		}
     }
 
 	fun ProcessLogAppend(Server: machine, Logs: seq[Log]) {
@@ -53,11 +80,9 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected
 		var j: int;
 		var sharedMinIndex: int;
 		var Servers: seq[machine];
-		print "processLogAppend";
 		if (!(Server in ServerLogs)) {
 			ServerLogs[Server] = Logs;
 		} else {
-			print "eliot 2";
 			i = 0;
 			ServerLogs[Server] = Logs;
 			Servers = keys(ServerLogs);
@@ -98,14 +123,4 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected
 		}
 		return idx;
 	}
-
-	// fun CheckFinalLogs(payload: seq[machine]) {
-	// 	var idx: int;
-	// 	var logs: seq[Log];
-	// 	idx = 0;
-	// 	while (idx < sizeof(payload)) {
-
-	// 		idx = idx + 1;
-	// 	}
-	// }
 }
