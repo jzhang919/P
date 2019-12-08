@@ -28,6 +28,10 @@ machine Client
     fun Configure(payload: machine)
     {
         Cluster = payload;
+        UpdateServer = new Server();
+        send Cluster, AddServer, UpdateServer;
+        UpdateServer = new Server();
+        send Cluster, AddServer, UpdateServer;
         raise LocalEvent;
     }
 
@@ -74,7 +78,10 @@ machine Client
             UpdateServer = new Server();
             send Cluster, AddServer, UpdateServer;
         }
-        if (Counter == 100)
+        if (Counter == 30){
+            send Cluster, RemoveServer, UpdateServer;
+        }
+        if (Counter == 32)
         {
 
             send Cluster, ShutDown;

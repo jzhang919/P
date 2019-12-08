@@ -66,7 +66,7 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
 			assert(sizeof(Logs) >= sizeof(PrevCommitted));
 			while (j < sizeof(PrevCommitted)) {
 				if (PrevCommitted[j] != Logs[j]) {
-					print "Newly elected leader should have all previously committed log entries from previous terms."
+					print "Newly elected leader should have all previously committed log entries from previous terms.";
 				}
 				assert(PrevCommitted[j] == Logs[j]);
 				j = j + 1;

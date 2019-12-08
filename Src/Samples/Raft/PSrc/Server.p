@@ -449,7 +449,6 @@ machine Server
 
         print "[Leader | Request] Leader {0} processing Client {1}", this, trigger.Client;
         LastClientRequest = trigger;
-        if ($)
         log = default(Log);
         log.Term = CurrentTerm;
         log.Key = LastClientRequest.Key;
@@ -684,9 +683,7 @@ machine Server
                 cfgLogIdx = cfgLogIdx + 1;
             }
 
-            //this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm + " | log " + this.Logs.Count + " | append votes " + this.VotesReceived + " | append fail (next idx = " + this.NextIndex[request.Server] + ")\n");
             print "\n[Leader] {0} | term {1} | log {2} | append votes {3} | append fail (next idx = {4})\n", this, CurrentTerm, sizeof(Logs), VotesReceived, NextIndex[request.Server].KV;
-            //TODO FIX THIS
             send request.Server, AppendEntriesRequest, (Term=CurrentTerm, LeaderId=this, PrevLogIndex=(KV=prevLogIndex, Cfg=prevCfgLogIndex), 
                 PrevLogTerm=(KV=prevLogTerm, Cfg=prevCfgLogTerm), Entries = logsAppend, CfgEntries = cfgLogsAppend, LeaderCommit = CommitIndex, 
                 ReceiverEndpoint=LastClientRequest.Client);
@@ -749,14 +746,12 @@ machine Server
         else
         {
             // AppendEntries RPC #2
-            // Consistency check 
-            // When sending an AppendEntries RPC, the leader includes the index and term of the entry in its log that immediately precedes
-            // the new entries. If the follower does not find an entry in its log with the same index and term, then it refuses the new entries
-            //TODO WHY NOT STRICT <?
+            // Reply false if log doesn't contain entry @ prevLogIndex (1,2)
+            // whose term matches prevLogTerm (3,4)
             if (request.PrevLogIndex.KV >= 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
                 request.PrevLogIndex.Cfg >= 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
-                request.PrevLogIndex.KV > 0 && Logs[request.PrevLogIndex.KV - 1].Term != request.PrevLogTerm.KV) ||
-                request.PrevLogIndex.Cfg > 0 && ConfigLogs[request.PrevLogIndex.Cfg - 1].Term != request.PrevLogTerm.Cfg)
+                request.PrevLogIndex.KV >= 0 && Logs[request.PrevLogIndex.KV].Term != request.PrevLogTerm.KV) ||
+                request.PrevLogIndex.Cfg >= 0 && ConfigLogs[request.PrevLogIndex.Cfg].Term != request.PrevLogTerm.Cfg)
             {
                 print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
@@ -869,7 +864,7 @@ machine Server
         var logTerm: int;
         logTerm = 0;
         print "LogIndex: {0}", logIndex;
-        if (logIndex > 0)
+        if (logIndex >= 0)
         {
             if (isKV){
                 logTerm = Logs[logIndex].Term;
