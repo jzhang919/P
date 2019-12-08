@@ -28,6 +28,10 @@ machine Client
     fun Configure(payload: machine)
     {
         Cluster = payload;
+        UpdateServer = new Server();
+        send Cluster, AddServer, UpdateServer;
+        UpdateServer = new Server();
+        send Cluster, AddServer, UpdateServer;
         raise LocalEvent;
     }
 
