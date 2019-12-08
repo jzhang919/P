@@ -19,7 +19,7 @@ machine ClusterManager
 		{
 			var idx: int;
 			var mac: machine;
-			NumberOfServers = 1;
+			NumberOfServers = 0;
 			LeaderTerm = -1;
 			idx = 0;
 			Servers = default(seq[machine]);
@@ -159,7 +159,7 @@ machine ClusterManager
 		on RemoveServer do (server: machine){
 			if (UpdatingConfig)
 			{
-				send this, AddServer, server;
+				send this, RemoveServer, server;
 			} else {
 				RemoveServerFromCluster(server);
 			}	
@@ -173,6 +173,7 @@ machine ClusterManager
 			} else {
 				Servers += (sizeof(Servers), payload.Server);
 				NumberOfServers = NumberOfServers + 1;
+				send Timer, UpdateServers, Servers;
 			}
 		}
 
@@ -191,6 +192,7 @@ machine ClusterManager
 					idx = idx + 1;
 				} 
 				NumberOfServers = NumberOfServers - 1;
+				send Timer, UpdateServers, Servers;
 			}
 		}
 

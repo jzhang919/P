@@ -406,7 +406,7 @@ machine Server
     fun AddServerToConfig(server: machine){
         var cfg: Config;
         Servers += (sizeof(Servers), server);
-        send server, SConfigureEvent, (Id = sizeof(Servers) - 1, Servers = Servers, ClusterManager = this);
+        send server, SConfigureEvent, (Id = sizeof(Servers) - 1, Servers = Servers, ClusterManager = ClusterManager);
         NextIndex[server] = (KV=sizeof(Logs), Cfg=sizeof(ConfigLogs));
         MatchIndex[server] = (KV=0, Cfg=0);
         cfg.Term = CurrentTerm;
