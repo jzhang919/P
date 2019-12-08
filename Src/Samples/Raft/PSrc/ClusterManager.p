@@ -180,6 +180,7 @@ machine ClusterManager
 		on RemoveServerResponse do (payload: (Server: machine, ServerRemoved: bool)){
 			var idx: int;
 			idx = 0;
+			UpdatingConfig = false;
 			if (!payload.ServerRemoved){
 				send this, RemoveServer, payload.Server;
 				raise LocalEvent;

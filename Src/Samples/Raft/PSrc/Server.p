@@ -470,6 +470,7 @@ machine Server
             print "[ConfigLog] Log element {0}: {1}", idx, ConfigLogs[idx];
             idx = idx + 1;
         }
+        print "CommitIndex: KV: {0}, CFG: {1}", CommitIndex.KV, CommitIndex.Cfg;
         print "\n\n SIZE OF KV: {0}, CONFIG: {1} \n\n", sizeof(Logs), sizeof(ConfigLogs);
     }
 
@@ -635,7 +636,7 @@ machine Server
 
                 VotesReceived = 0;
                 // TODO: Should this be null?
-                LastClientRequest = (Client=default(machine), Key=default(string), Val=default(string));
+                LastClientRequest = (Client=request.ReceiverEndpoint, Key=Logs[CommitIndex.KV].Key, Val=Logs[CommitIndex.KV].Val);
 
                 send request.ReceiverEndpoint, Response;
                 if (request.Cfg){
@@ -732,7 +733,6 @@ machine Server
 
         cfg_success = false;
         kv_success = false;
-        print "Begin looking at method";
         if (request.Term < CurrentTerm)
         {   
             // AppendEntries RPC #1
@@ -744,7 +744,6 @@ machine Server
             // AppendEntries RPC #2
             // Reply false if log doesn't contain entry @ prevLogIndex (1,2)
             // whose term matches prevLogTerm (3,4)
-            print "hello wat {0}, {1}", request.PrevLogIndex.KV, request.PrevLogIndex.KV;
             if (request.PrevLogIndex.KV >= 0 && sizeof(Logs) <= request.PrevLogIndex.KV ||
                 request.PrevLogIndex.Cfg >= 0 && sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg ||
                 request.PrevLogIndex.KV >= 0 && Logs[request.PrevLogIndex.KV].Term != request.PrevLogTerm.KV ||
@@ -756,7 +755,6 @@ machine Server
             else
             {
                 idx = 0;
-                print "We successfully begin appending.";
                 // On AppendEntries RPC from current leader, reset ElectionTimer
                 if (LeaderId == request.LeaderId) {
                     TickCounter = 0;

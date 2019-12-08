@@ -88,7 +88,7 @@ machine Client
         }
         if (Counter == 50){
             send Cluster, RemoveServer, LeaderServer;
-            send Cluster, RemoveServer, LeaderServer2;
+            // send Cluster, RemoveServer, LeaderServer2;
         }
         if (Counter == 100)
         {
