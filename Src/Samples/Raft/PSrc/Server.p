@@ -5,7 +5,6 @@
 
 machine Server
 {
-    var ServerId : int;
     var ClusterManager : machine;
     var Servers: seq[machine];
     var LeaderId: machine;
@@ -48,7 +47,7 @@ machine Server
         /*
             @Receive: Configuration payload from ClusterManager. 
         */
-        on SConfigureEvent do (payload: (Id: int, Servers: seq[machine], ClusterManager: machine)) {
+        on SConfigureEvent do (payload: (Servers: seq[machine], ClusterManager: machine)) {
             configServer(payload);            
         }
         on BecomeFollower goto Follower;
@@ -56,8 +55,7 @@ machine Server
         defer VoteRequest, AppendEntriesRequest;
     }
 
-    fun configServer(payload: (Id: int, Servers: seq[machine], ClusterManager: machine)){
-            ServerId = payload.Id;
+    fun configServer(payload: (Servers: seq[machine], ClusterManager: machine)){
             Servers = payload.Servers;
             ClusterManager = payload.ClusterManager;    
             TickCounter = 0;
@@ -170,7 +168,7 @@ machine Server
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
 
-        //ignore PTimeout;
+        ignore SConfigureEvent;
     }
 
 
@@ -236,9 +234,7 @@ machine Server
                 VotesReceived = VotesReceived + 1;
                 if (VotesReceived >= (sizeof(Servers) / 2) + 1)
                 {
-                   // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
-                    //    " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
-                    print "\n [Leader] {0} | term {1} | election votes {2} | KV log size {3} | Cfg Log size {4} \n", this, CurrentTerm, VotesReceived, sizeof(Logs), sizeof(ConfigLogs); 
+                  print "\n [Leader] {0} | term {1} | election votes {2} | KV log size {3} | Cfg Log size {4} \n", this, CurrentTerm, VotesReceived, sizeof(Logs), sizeof(ConfigLogs); 
                     VotesReceived = 0;
                     raise BecomeLeader;
                 }
@@ -285,6 +281,7 @@ machine Server
         on BecomeLeader goto Leader;
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
+        ignore SConfigureEvent;
     }
 
     fun BroadcastVoteRequests()
@@ -298,7 +295,7 @@ machine Server
 
         idx = 0;
         while (idx < sizeof(Servers)) {
-           if (idx == ServerId) {
+           if (this == Servers[idx]) {
                 idx = idx + 1;
                 continue;
            }
@@ -351,7 +348,7 @@ machine Server
             idx = 0;
             while (idx < sizeof(Servers))
             {
-                if (idx == ServerId) {
+                if (this == Servers[idx]) {
                     idx = idx + 1;
                     continue;
                 }
@@ -400,13 +397,13 @@ machine Server
                 TickCounter = 0;
             }
         }
-        //ignore ETimeout, PTimeout;
+        ignore SConfigureEvent;
     }
 
     fun AddServerToConfig(server: machine){
         var cfg: Config;
         Servers += (sizeof(Servers), server);
-        send server, SConfigureEvent, (Id = sizeof(Servers) - 1, Servers = Servers, ClusterManager = this);
+        send server, SConfigureEvent, (Servers = Servers, ClusterManager = ClusterManager);
         NextIndex[server] = (KV=sizeof(Logs), Cfg=sizeof(ConfigLogs));
         MatchIndex[server] = (KV=0, Cfg=0);
         cfg.Term = CurrentTerm;
@@ -473,6 +470,7 @@ machine Server
             print "[ConfigLog] Log element {0}: {1}", idx, ConfigLogs[idx];
             idx = idx + 1;
         }
+        print "CommitIndex: KV: {0}, CFG: {1}", CommitIndex.KV, CommitIndex.Cfg;
         print "\n\n SIZE OF KV: {0}, CONFIG: {1} \n\n", sizeof(Logs), sizeof(ConfigLogs);
     }
 
@@ -497,7 +495,7 @@ machine Server
         while (sIdx < sizeof(Servers))
         {
             server = Servers[sIdx];
-            if (sIdx == ServerId){                
+            if (this == Servers[sIdx]){                
                 sIdx = sIdx + 1;
                 continue;
             }
@@ -585,6 +583,7 @@ machine Server
         var prevCfgLogTerm: int;
         var idx: int;
         var cfgLogIdx: int;
+        var committedLogs: seq[Log];
 
         print "[Leader | AppendEntriesResponse] {0} received response {1} from server {2}", this, request.Success, request.Server; 
         print "[Leader | AppendEntriesResponse] Leader term: {0}, follower term: {1}", CurrentTerm, request.Term;
@@ -639,10 +638,18 @@ machine Server
 
                 VotesReceived = 0;
                 // TODO: Should this be null?
-                LastClientRequest = (Client=default(machine), Key=default(string), Val=default(string));
+                LastClientRequest = (Client=request.ReceiverEndpoint, Key=Logs[CommitIndex.KV].Key, Val=Logs[CommitIndex.KV].Val);
 
                 send request.ReceiverEndpoint, Response;
-                announce M_LeaderCommitted, Logs;
+                
+                // Send all CommittedLogs to the SafetyMonitor
+                idx = 0;
+                while (idx < CommitIndex.KV) {
+                    committedLogs += (idx, Logs[idx]);
+                    idx = idx + 1;
+                }
+                announce M_LeaderCommitted, committedLogs;
+                
                 if (request.Cfg){
                     if (UpdateType == 1){
                         send ClusterManager, AddServerResponse, (Server=UpdateServer, ServerAdded=true);
@@ -662,7 +669,9 @@ machine Server
                 NextIndex[request.Server].KV = NextIndex[request.Server].KV - 1;
                 print "NextIndex for {0} is {1}", request.Server, NextIndex[request.Server].KV;
             }
-
+            if (NextIndex[request.Server].Cfg > 0){
+                NextIndex[request.Server].Cfg = NextIndex[request.Server].Cfg - 1;
+            }
             logsAppend = default(seq[Log]);
             
             prevLogIndex = NextIndex[request.Server].KV - 1;
@@ -711,12 +720,12 @@ machine Server
             lastCfgLogIndex > request.LastLogIndex.Cfg ||
             lastCfgLogTerm > request.LastLogTerm.Cfg)
         {
-            print "\n [Server] {0} | term {1} | log {2} | Reject {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
+            print "\n [Server] {0} | term {1} | log {2} | Reject {3}", this, CurrentTerm, sizeof(Logs), request.CandidateId;
             send request.CandidateId, VoteResponse, (Term=CurrentTerm, VoteGranted=false);
         }
         else
         {
-            print "\n [Server] {0} | term {1} | log {2} | Approve {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
+            print "\n [Server] {0} | term {1} | log {2} | Approve {3}", this, CurrentTerm, sizeof(Logs), request.CandidateId;
             TickCounter = 0;
 
             VotedFor = request.CandidateId;
@@ -736,9 +745,8 @@ machine Server
 
         cfg_success = false;
         kv_success = false;
-
         if (request.Term < CurrentTerm)
-        {
+        {   
             // AppendEntries RPC #1
             print "\n[Server] {0} | term {1} | log {2} | append false (<term) \n", this, CurrentTerm, sizeof(Logs);
             send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
@@ -748,9 +756,9 @@ machine Server
             // AppendEntries RPC #2
             // Reply false if log doesn't contain entry @ prevLogIndex (1,2)
             // whose term matches prevLogTerm (3,4)
-            if (request.PrevLogIndex.KV >= 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
-                request.PrevLogIndex.Cfg >= 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
-                request.PrevLogIndex.KV >= 0 && Logs[request.PrevLogIndex.KV].Term != request.PrevLogTerm.KV) ||
+            if (request.PrevLogIndex.KV >= 0 && sizeof(Logs) <= request.PrevLogIndex.KV ||
+                request.PrevLogIndex.Cfg >= 0 && sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg ||
+                request.PrevLogIndex.KV >= 0 && Logs[request.PrevLogIndex.KV].Term != request.PrevLogTerm.KV ||
                 request.PrevLogIndex.Cfg >= 0 && ConfigLogs[request.PrevLogIndex.Cfg].Term != request.PrevLogTerm.Cfg)
             {
                 print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 

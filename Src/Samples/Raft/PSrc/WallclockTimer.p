@@ -19,6 +19,9 @@ machine WallclockTimer
             send this, TickEvent;
         }
 
+        on UpdateServers do (Svrs: seq[machine]){
+            Servers = Svrs;
+        }
         on TickEvent do Tick;
         on CancelTimer goto Inactive;
         ignore StartTimer; //, CheckLogsOnShutDown;

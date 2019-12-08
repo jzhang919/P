@@ -9,6 +9,8 @@ machine Client
     var LatestKey: string;
     var LatestVal: string;
     var Counter: int;
+    var LeaderServer: machine;
+    var LeaderServer2: machine;
     var UpdateServer: machine;
 
     start state Init
@@ -28,6 +30,12 @@ machine Client
     fun Configure(payload: machine)
     {
         Cluster = payload;
+        UpdateServer = new Server();
+        LeaderServer = UpdateServer;
+        send Cluster, AddServer, UpdateServer;
+        UpdateServer = new Server();
+        LeaderServer2 = UpdateServer;
+        send Cluster, AddServer, UpdateServer;
         UpdateServer = new Server();
         send Cluster, AddServer, UpdateServer;
         UpdateServer = new Server();
@@ -78,10 +86,11 @@ machine Client
             UpdateServer = new Server();
             send Cluster, AddServer, UpdateServer;
         }
-        if (Counter == 30){
-            send Cluster, RemoveServer, UpdateServer;
+        if (Counter == 50){
+            send Cluster, RemoveServer, LeaderServer;
+            // send Cluster, RemoveServer, LeaderServer2;
         }
-        if (Counter == 32)
+        if (Counter == 100)
         {
 
             send Cluster, ShutDown;

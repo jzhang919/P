@@ -51,6 +51,9 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
 		var PrevCommitted: seq[Log];
 		var terms: seq[int];
 		// Terms should be increasing
+		if (Term <= CurrentTerm) {
+			print "New term {0} not greater than CurrentTerm {1}", Term, CurrentTerm;
+		}
 		assert(Term > CurrentTerm);
 		CurrentTerm = Term;
         if (CurrentTerm in TermsWithLeader){
@@ -63,6 +66,11 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
 		terms = keys(CommittedLogs);
 		while (i < sizeof(terms)) {
 			PrevCommitted = CommittedLogs[terms[i]];
+			if (sizeof(Logs) < sizeof(PrevCommitted)) {
+				print "prevCommitted {0}", PrevCommitted;
+				print "new leader log {0}", Logs;
+				print "New Term {0} leader's Log size {1} is less than previously committed log size {2} of term {3}", CurrentTerm, sizeof(Logs), sizeof(PrevCommitted), terms[i];
+			}
 			assert(sizeof(Logs) >= sizeof(PrevCommitted));
 			while (j < sizeof(PrevCommitted)) {
 				if (PrevCommitted[j] != Logs[j]) {
