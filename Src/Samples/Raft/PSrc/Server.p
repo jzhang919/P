@@ -254,6 +254,7 @@ machine Server
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
             Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)){
             print "[Candidate | AppendEntriesRequest] Server {0}", this;
+            
             if (request.Term > CurrentTerm)
             {
                 CurrentTerm = request.Term;
@@ -263,6 +264,7 @@ machine Server
             }
             else
             {
+                
                 AppendEntries(request);
             }
         }
@@ -762,7 +764,7 @@ machine Server
     }
 
     fun AppendEntries(request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
-            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine))
+            Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)) : bool
     {
         var idx: int;
         var cfgLogIdx: int;
@@ -776,6 +778,7 @@ machine Server
             // AppendEntries RPC #1
             print "\n[Server] {0} | term {1} | log {2} | append false (<term) \n", this, CurrentTerm, sizeof(Logs);
             send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
+            return false;
         }
         else
         {
@@ -789,6 +792,7 @@ machine Server
             {
                 print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
+                return false;
             }
             else
             {
@@ -860,6 +864,7 @@ machine Server
 
                 LeaderId = request.LeaderId;
                 send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=true, KV=kv_success, Cfg=cfg_success, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
+                return true;
             }
         }
     }
