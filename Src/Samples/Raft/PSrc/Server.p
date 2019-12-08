@@ -5,7 +5,6 @@
 
 machine Server
 {
-    var ServerId : int;
     var ClusterManager : machine;
     var Servers: seq[machine];
     var LeaderId: machine;
@@ -48,7 +47,7 @@ machine Server
         /*
             @Receive: Configuration payload from ClusterManager. 
         */
-        on SConfigureEvent do (payload: (Id: int, Servers: seq[machine], ClusterManager: machine)) {
+        on SConfigureEvent do (payload: (Servers: seq[machine], ClusterManager: machine)) {
             configServer(payload);            
         }
         on BecomeFollower goto Follower;
@@ -56,8 +55,7 @@ machine Server
         defer VoteRequest, AppendEntriesRequest;
     }
 
-    fun configServer(payload: (Id: int, Servers: seq[machine], ClusterManager: machine)){
-            ServerId = payload.Id;
+    fun configServer(payload: (Servers: seq[machine], ClusterManager: machine)){
             Servers = payload.Servers;
             ClusterManager = payload.ClusterManager;    
             TickCounter = 0;
@@ -297,7 +295,7 @@ machine Server
 
         idx = 0;
         while (idx < sizeof(Servers)) {
-           if (idx == ServerId) {
+           if (this == Servers[idx]) {
                 idx = idx + 1;
                 continue;
            }
@@ -351,7 +349,7 @@ machine Server
             idx = 0;
             while (idx < sizeof(Servers))
             {
-                if (idx == ServerId) {
+                if (this == Servers[idx]) {
                     idx = idx + 1;
                     continue;
                 }
@@ -406,7 +404,7 @@ machine Server
     fun AddServerToConfig(server: machine){
         var cfg: Config;
         Servers += (sizeof(Servers), server);
-        send server, SConfigureEvent, (Id = sizeof(Servers) - 1, Servers = Servers, ClusterManager = ClusterManager);
+        send server, SConfigureEvent, (Servers = Servers, ClusterManager = ClusterManager);
         NextIndex[server] = (KV=sizeof(Logs), Cfg=sizeof(ConfigLogs));
         MatchIndex[server] = (KV=0, Cfg=0);
         cfg.Term = CurrentTerm;
@@ -496,7 +494,7 @@ machine Server
         while (sIdx < sizeof(Servers))
         {
             server = Servers[sIdx];
-            if (sIdx == ServerId){                
+            if (this == Servers[sIdx]){                
                 sIdx = sIdx + 1;
                 continue;
             }
@@ -709,12 +707,12 @@ machine Server
             lastCfgLogIndex > request.LastLogIndex.Cfg ||
             lastCfgLogTerm > request.LastLogTerm.Cfg)
         {
-            print "\n [Server] {0} | term {1} | log {2} | Reject {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
+            print "\n [Server] {0} | term {1} | log {2} | Reject {3}", this, CurrentTerm, sizeof(Logs), request.CandidateId;
             send request.CandidateId, VoteResponse, (Term=CurrentTerm, VoteGranted=false);
         }
         else
         {
-            print "\n [Server] {0} | term {1} | log {2} | Approve {3}", ServerId, CurrentTerm, sizeof(Logs), request.CandidateId;
+            print "\n [Server] {0} | term {1} | log {2} | Approve {3}", this, CurrentTerm, sizeof(Logs), request.CandidateId;
             TickCounter = 0;
 
             VotedFor = request.CandidateId;

@@ -54,7 +54,7 @@ machine ClusterManager
 			while(idx < NumberOfServers)
 			{
 				print "[ClusterManager | Initialize] Initializing server {0}", idx;
-				send Servers[idx], SConfigureEvent, (Id = idx, Servers = Servers, ClusterManager = this);
+				send Servers[idx], SConfigureEvent, (Servers = Servers, ClusterManager = this);
 				idx = idx + 1;
 			}
 			send Client, CConfigureEvent, this;
@@ -79,7 +79,7 @@ machine ClusterManager
 					while(idx < NumberOfServers)
 					{
 						print "[ClusterManager | Initialize] Initializing server {0}", idx;
-						send Servers[idx], SConfigureEvent, (Id = idx, Servers = Servers, ClusterManager = this);
+						send Servers[idx], SConfigureEvent, (Servers = Servers, ClusterManager = this);
 						idx = idx + 1;
 					}
 					raise LocalEvent;
