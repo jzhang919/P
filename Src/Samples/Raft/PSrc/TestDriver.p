@@ -11,7 +11,6 @@ machine TestDriver0 {
 			//var client : machine;
 			print "testdriver0";
 			clusterManager = new ClusterManager();
-			print "eliot";
 			//new Client(clusterManager);
 		}
 	}

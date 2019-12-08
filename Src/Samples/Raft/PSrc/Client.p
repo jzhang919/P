@@ -88,6 +88,8 @@ machine Client
         }
         if (Counter == 50){
             send Cluster, RemoveServer, LeaderServer;
+            // Note to James: the LeaderServer variable here is not necessarily the leader, it's just a server.
+            print "CRASHING A SERVER";
             // send Cluster, RemoveServer, LeaderServer2;
         }
         if (Counter == 100)

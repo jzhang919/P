@@ -27,6 +27,11 @@ machine Server
     var MaxTicks: int;  // Randomly set ceiling for tick count
     var TickCounter: int; // Ticks seen so far. Reset at certain points.
 
+    // Special case when the Leader is being removed from the config through removeServer.
+    // Check Raft paper Section 6, issue 2 on page 12. 
+    // "there will be a period of time when the leader is managing a cluster that does not include itself; it replicates log entries but does not count itself in majorities."
+    var LeaderNotInCfg: bool;
+
     start state Init
     {
         entry
@@ -42,6 +47,7 @@ machine Server
 
             UpdateServer = default(machine);
             UpdateType = 0;
+            LeaderNotInCfg = false;
         }
 
         /*
@@ -106,13 +112,16 @@ machine Server
             }
         }
         on VoteRequest do (payload: (Term: int, CandidateId: machine, LastLogIndex: Idxs, LastLogTerm: Idxs)) {
-            print "[Follower | VoteRequest] Server {0} | Payload Term {1} | Current Term {2}", this, payload.Term, CurrentTerm;
-            if (payload.Term > CurrentTerm)
-            {
-                CurrentTerm = payload.Term;
-                VotedFor = default(machine);
+            // Section 6: Servers disregard RequestVote RPCs when they believe a current leader exists
+            if (LeaderId == null) {
+                print "[Follower | VoteRequest] Server {0} | Payload Term {1} | Current Term {2}", this, payload.Term, CurrentTerm;
+                if (payload.Term > CurrentTerm)
+                {
+                    CurrentTerm = payload.Term;
+                    VotedFor = default(machine);
+                }
+                Vote(payload);
             }
-            Vote(payload);
         }
 
         // TODO: see if this ever shows up. It doesn't really make sense for a follower to receive a vote response
@@ -153,6 +162,7 @@ machine Server
             TickCounter = TickCounter + 1;
             print "[Follower] {0} TickCounter {1}, MaxTicks {2}", this, TickCounter, MaxTicks;
             if (TickCounter >= MaxTicks) {
+                LeaderId = default(machine);
                 raise BecomeCandidate;
             }
         }
@@ -240,7 +250,7 @@ machine Server
                 }
             }
         }
-        // TODO: Confirm that commenting out AppendEntries below is correct
+
         on AppendEntriesRequest do (request: (Term: int, LeaderId: machine, PrevLogIndex: Idxs, PrevLogTerm: Idxs,
             Entries: seq[Log], CfgEntries: seq[Config], LeaderCommit: Idxs, ReceiverEndpoint: machine)){
             print "[Candidate | AppendEntriesRequest] Server {0}", this;
@@ -428,6 +438,10 @@ machine Server
         }
 
         if (sIdx >= 0 && sIdx < sizeof(Servers)){
+            if (Servers[sIdx] == this) {
+                LeaderNotInCfg = true;
+                print "\nSpecial case: removing the current leader from config";
+            }
             Servers -= sIdx;
         }
         cfg.Term = CurrentTerm;
@@ -445,6 +459,12 @@ machine Server
         var cfg: Config;
 
         print "[Leader | Request] Leader {0} processing Client {1}", this, trigger.Client;
+        if (LeaderNotInCfg) {
+            // Leader should not count itself to majority.
+            VotesReceived = 0;
+        } else {
+            VotesReceived = 1;
+        }
         LastClientRequest = trigger;
         log = default(Log);
         log.Term = CurrentTerm;
@@ -602,7 +622,7 @@ machine Server
         // TODO: check final bullet point of "Rules for servers" in paper
         else if (request.Success)
         {
-            print "[Leader | AppendEntriesResponse] Success; preparing commit.";
+            print "[Leader | AppendEntriesResponse] Success";
             if (request.KV){
                 NextIndex[request.Server].KV = sizeof(Logs);
                 MatchIndex[request.Server].KV = sizeof(Logs) - 1;                
@@ -633,6 +653,7 @@ machine Server
                 if (request.Cfg && MatchIndex[request.Server].Cfg > CommitIndex.Cfg &&
                     ConfigLogs[MatchIndex[request.Server].Cfg -1].Term == CurrentTerm)
                 {
+                    print "[Leader] Config CommitIndex updated from {0} to {1}", CommitIndex.Cfg, MatchIndex[request.Server].Cfg;
                     CommitIndex.Cfg = MatchIndex[request.Server].Cfg;
                 }
 
@@ -649,7 +670,7 @@ machine Server
                     idx = idx + 1;
                 }
                 announce M_LeaderCommitted, committedLogs;
-                
+
                 if (request.Cfg){
                     if (UpdateType == 1){
                         send ClusterManager, AddServerResponse, (Server=UpdateServer, ServerAdded=true);
@@ -659,6 +680,11 @@ machine Server
                     }
                     UpdateServer = default(machine);
                     UpdateType = 0;
+                    if (LeaderNotInCfg) {
+                        print "[LeaderNotInCfg] New configuration should have committed, now becoming follower.";
+                        LeaderNotInCfg = false;
+                        raise BecomeFollower;
+                    }
                 }
             }
         }

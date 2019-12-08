@@ -1,10 +1,12 @@
-
-// Election safety: at most one leader can be elected in a given term.
+// RAFT SAFETY RULES: ✅ is explicitly checked
+// ✅ Election safety: at most one leader can be elected in a given term.
 // Leader Append-Only: a leader can only append new entries to its logs (it can neither overwrite nor delete entries).
-// Log Matching: if two logs contain an entry with the same index and term, then the logs are identical in all entries up through the given index.
-// Leader Completeness: if a log entry is committed in a given term then it will be present in the logs of the leaders since this term
+// ✅ Log Matching: if two logs contain an entry with the same index and term, then the logs are identical in all entries up through the given index.
+// ✅ Leader Completeness: if a log entry is committed in a given term then it will be present in the logs of the leaders since this term
 // State Machine Safety: if a server has applied a particular log entry to its state machine, then no other server may apply a different command for the same log.
 
+// Leader Append-Only is not explicitly checked but should be guaranteed: our leader machine only uses the "+=" append operation on its Log
+// State Machine Safety is guaranteed by a restriction on the election process.
 
 spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitted
 {
@@ -62,6 +64,7 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
         assert(!(CurrentTerm in TermsWithLeader));
         TermsWithLeader[CurrentTerm] = true;
 
+		// TODO: Leader Completeness Property is not checked for the config log
 		// The newly elected leader should have all previously committed log entries from previous terms.
 		terms = keys(CommittedLogs);
 		while (i < sizeof(terms)) {
