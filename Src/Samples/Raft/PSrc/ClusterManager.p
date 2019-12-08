@@ -19,7 +19,7 @@ machine ClusterManager
 		{
 			var idx: int;
 			var mac: machine;
-			NumberOfServers = 0;
+			NumberOfServers = 3;
 			LeaderTerm = -1;
 			idx = 0;
 			Servers = default(seq[machine]);
@@ -50,16 +50,13 @@ machine ClusterManager
 		{
 			var idx: int;
 			idx = 0;
-			print "Entering initialize.";
 			Timer = new WallclockTimer();
 			while(idx < NumberOfServers)
 			{
-				print "Entering while loop?";
 				print "[ClusterManager | Initialize] Initializing server {0}", idx;
 				send Servers[idx], SConfigureEvent, (Id = idx, Servers = Servers, ClusterManager = this);
 				idx = idx + 1;
 			}
-			print "huh";
 			send Client, CConfigureEvent, this;
 			if (NumberOfServers > 1){
 				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
@@ -69,19 +66,24 @@ machine ClusterManager
 
 		on AddServer do (server: machine){
 			var idx: int;
-			print "Adding server?!";
-			idx = 0;
-			Servers += (sizeof(Servers), server);
-			NumberOfServers = NumberOfServers + 1;
-			if (NumberOfServers > 1) {
-				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
-				while(idx < NumberOfServers)
-				{
-					print "[ClusterManager | Initialize] Initializing server {0}", idx;
-					send Servers[idx], SConfigureEvent, (Id = idx, Servers = Servers, ClusterManager = this);
-					idx = idx + 1;
-				}
+			if (NumberOfServers > 1){
+				send this, AddServer, server;
 				raise LocalEvent;
+			}
+			else {
+				idx = 0;
+				Servers += (sizeof(Servers), server);
+				NumberOfServers = NumberOfServers + 1;
+				if (NumberOfServers > 1) {
+					send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
+					while(idx < NumberOfServers)
+					{
+						print "[ClusterManager | Initialize] Initializing server {0}", idx;
+						send Servers[idx], SConfigureEvent, (Id = idx, Servers = Servers, ClusterManager = this);
+						idx = idx + 1;
+					}
+					raise LocalEvent;
+				}
 			}
 		}
 		defer RemoveServer;

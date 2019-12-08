@@ -236,9 +236,7 @@ machine Server
                 VotesReceived = VotesReceived + 1;
                 if (VotesReceived >= (sizeof(Servers) / 2) + 1)
                 {
-                   // this.Logger.WriteLine("\n [Leader] " + this.ServerId + " | term " + this.CurrentTerm +
-                    //    " | election votes " + this.VotesReceived + " | log " + this.Logs.Count + "\n");
-                    print "\n [Leader] {0} | term {1} | election votes {2} | KV log size {3} | Cfg Log size {4} \n", this, CurrentTerm, VotesReceived, sizeof(Logs), sizeof(ConfigLogs); 
+                  print "\n [Leader] {0} | term {1} | election votes {2} | KV log size {3} | Cfg Log size {4} \n", this, CurrentTerm, VotesReceived, sizeof(Logs), sizeof(ConfigLogs); 
                     VotesReceived = 0;
                     raise BecomeLeader;
                 }
@@ -733,9 +731,9 @@ machine Server
 
         cfg_success = false;
         kv_success = false;
-
+        print "Begin looking at method";
         if (request.Term < CurrentTerm)
-        {
+        {   
             // AppendEntries RPC #1
             print "\n[Server] {0} | term {1} | log {2} | append false (<term) \n", this, CurrentTerm, sizeof(Logs);
             send request.LeaderId, AppendEntriesResponse, (Term=CurrentTerm, Success=false, KV=false, Cfg=false, Server=this, ReceiverEndpoint=request.ReceiverEndpoint);
@@ -745,9 +743,10 @@ machine Server
             // AppendEntries RPC #2
             // Reply false if log doesn't contain entry @ prevLogIndex (1,2)
             // whose term matches prevLogTerm (3,4)
-            if (request.PrevLogIndex.KV >= 0 && (sizeof(Logs) <= request.PrevLogIndex.KV ||
-                request.PrevLogIndex.Cfg >= 0 && (sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg) ||
-                request.PrevLogIndex.KV >= 0 && Logs[request.PrevLogIndex.KV].Term != request.PrevLogTerm.KV) ||
+            print "hello wat {0}, {1}", request.PrevLogIndex.KV, request.PrevLogIndex.KV;
+            if (request.PrevLogIndex.KV >= 0 && sizeof(Logs) <= request.PrevLogIndex.KV ||
+                request.PrevLogIndex.Cfg >= 0 && sizeof(ConfigLogs) <= request.PrevLogIndex.Cfg ||
+                request.PrevLogIndex.KV >= 0 && Logs[request.PrevLogIndex.KV].Term != request.PrevLogTerm.KV ||
                 request.PrevLogIndex.Cfg >= 0 && ConfigLogs[request.PrevLogIndex.Cfg].Term != request.PrevLogTerm.Cfg)
             {
                 print "\n[Leader] {0} | term {1} | log {2} | append false (not in log)\n", this, CurrentTerm, sizeof(Logs); 
@@ -756,7 +755,7 @@ machine Server
             else
             {
                 idx = 0;
-                // print "We successfully begin appending.";
+                print "We successfully begin appending.";
                 // On AppendEntries RPC from current leader, reset ElectionTimer
                 if (LeaderId == request.LeaderId) {
                     TickCounter = 0;

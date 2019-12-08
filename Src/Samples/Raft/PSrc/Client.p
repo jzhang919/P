@@ -78,10 +78,10 @@ machine Client
             UpdateServer = new Server();
             send Cluster, AddServer, UpdateServer;
         }
-        if (Counter == 30){
+        if (Counter == 50){
             send Cluster, RemoveServer, UpdateServer;
         }
-        if (Counter == 32)
+        if (Counter == 100)
         {
 
             send Cluster, ShutDown;
