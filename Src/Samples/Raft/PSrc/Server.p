@@ -170,7 +170,7 @@ machine Server
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
 
-        //ignore PTimeout;
+        ignore SConfigureEvent;
     }
 
 
@@ -283,6 +283,7 @@ machine Server
         on BecomeLeader goto Leader;
         on BecomeFollower goto Follower;
         on BecomeCandidate goto Candidate;
+        ignore SConfigureEvent;
     }
 
     fun BroadcastVoteRequests()
@@ -399,7 +400,7 @@ machine Server
                 TickCounter = 0;
             }
         }
-        //ignore ETimeout, PTimeout;
+        ignore SConfigureEvent;
     }
 
     fun AddServerToConfig(server: machine){
@@ -657,7 +658,9 @@ machine Server
             {
                 NextIndex[request.Server].KV = NextIndex[request.Server].KV - 1;
             }
-
+            if (NextIndex[request.Server].Cfg > 0){
+                NextIndex[request.Server].Cfg = NextIndex[request.Server].Cfg - 1;
+            }
             logsAppend = default(seq[Log]);
             
             prevLogIndex = NextIndex[request.Server].KV - 1;

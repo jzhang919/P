@@ -19,7 +19,7 @@ machine ClusterManager
 		{
 			var idx: int;
 			var mac: machine;
-			NumberOfServers = 3;
+			NumberOfServers = 1;
 			LeaderTerm = -1;
 			idx = 0;
 			Servers = default(seq[machine]);
