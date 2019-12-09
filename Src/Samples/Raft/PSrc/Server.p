@@ -266,7 +266,7 @@ machine Server
             {
                 success = AppendEntries(request);
                 if (success) {
-                    // If a candidate successfully appendsEntry from another server, it should revert back to the candidate state.
+                    // If a candidate successfully appendsEntry from another server, it should revert back to the follower state.
                     // Note: this seems to happen in the case the request.Term == CurrentTerm
                     raise BecomeFollower;
                 }
@@ -408,7 +408,6 @@ machine Server
         on TickEvent do {
             TickCounter = TickCounter + 1;
             if (TickCounter >= MaxTicks) {
-                // TODO : sent heartbeat here
                 HeartbeatSendAsLeader();
                 TickCounter = 0;
             }

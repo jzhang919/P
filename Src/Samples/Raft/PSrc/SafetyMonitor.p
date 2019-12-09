@@ -111,8 +111,6 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
 						j = j + 1;
 					}
 				}
-			
-
 				i = i + 1;
 			}
 		}

@@ -17,24 +17,22 @@ machine ClusterManager
 	{
 		entry
 		{
-			var idx: int;
-			var mac: machine;
+			//var idx: int;
+			//var mac: machine;
 			NumberOfServers = 0;
 			LeaderTerm = -1;
-			idx = 0;
+			//idx = 0;
 			Servers = default(seq[machine]);
 			UpdatingConfig = false;
 
-			print "clustermanager";
-			while(idx < NumberOfServers)
-			{	
-				mac = new Server();
-				Servers += (idx, mac);
-				idx = idx + 1;
-			}
-			print "made servers";
+			// while(idx < NumberOfServers)
+			// {	
+			// 	mac = new Server();
+			// 	Servers += (idx, mac);
+			// 	idx = idx + 1;
+			// }
 			
-			Client = new Client();
+			// Client = new Client();
 			raise LocalEvent;
 		}
 
@@ -57,7 +55,7 @@ machine ClusterManager
 				send Servers[idx], SConfigureEvent, (Servers = Servers, ClusterManager = this);
 				idx = idx + 1;
 			}
-			send Client, CConfigureEvent, this;
+			//send Client, CConfigureEvent, this;
 			if (NumberOfServers > 1){
 				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
 				raise LocalEvent;
@@ -106,7 +104,7 @@ machine ClusterManager
 		on SentAllTicks do {
 			send Timer, TickEvent;
 		}
-		defer Request, AddServer, RemoveServer;
+		defer Request, AddServer, RemoveServer, AddServerResponse, RemoveServerResponse;
 		ignore MakeUnavailable;
 	}
 
@@ -128,7 +126,6 @@ machine ClusterManager
             send Servers[idx], ShutDown;
         	idx = idx + 1;
         }
-		//send Timer, CheckLogsOnShutDown, Servers;
 		send Timer, halt;
 
         raise halt;
@@ -215,4 +212,3 @@ machine ClusterManager
     	send Leader, RemoveServer, server;
     }
 }
-// }

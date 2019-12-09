@@ -27,7 +27,6 @@ event AddServerResponse: (Server: machine, ServerAdded: bool);
 event RemoveServerResponse: (Server: machine, ServerRemoved: bool);
 event EMonitorInit;
 
-
 // External Events below (Client to ClusterManager)
 
 // Argument: Client, address of server, Key, Val: String K/V entry to Raft Log.
@@ -35,13 +34,15 @@ event Request: (Client: machine, Key: string, Val:string);
 // Argument: newServer, address of server to add to Leader's configuration
 event AddServer: machine;
 // Argument: oldServer, address of server to remove from Leader's configuration
-event RemoveServer: machine; 
-
+event RemoveServer: machine;
 
 // Events specifically announced for the SafetyMonitor
 event M_LogAppend: (Server: machine, Logs: seq[Log]); // Used to indicate to the Monitor that a Log is being appended.
 event M_NotifyLeaderElected: (Term: int, Logs: seq[Log]);
 event M_LeaderCommitted: seq[Log];
+
+
+// Custom types
 
 type Log = (Term: int, Key: string, Val: string);
 
