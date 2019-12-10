@@ -643,7 +643,10 @@ machine Server
             
             VotesReceived = VotesReceived + 1;
             print "[Leader | AppendEntriesResponse] VotesReceived: {0}", VotesReceived;
-            if (request.ReceiverEndpoint == null){
+            if (request.ReceiverEndpoint == null) {
+                if (!request.Cfg) {
+                    VotesReceived = 0;
+                }
                 print "[Leader | AppendEntriesResponse] request.ReceiverEndpoint: null";    
                 return;
             }        

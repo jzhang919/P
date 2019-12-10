@@ -1,6 +1,5 @@
 <Project name = "Raft">
 <InputFiles>
-	<PFile>./PSrc/Client.p</PFile>
 	<PFile>./PSrc/ClusterManager.p</PFile>
 	<PFile>./PSrc/Events.p</PFile>
 	<PFile>./PSrc/SafetyMonitor.p</PFile>
