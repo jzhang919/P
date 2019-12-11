@@ -17,22 +17,10 @@ machine ClusterManager
 	{
 		entry
 		{
-			//var idx: int;
-			//var mac: machine;
 			NumberOfServers = 0;
 			LeaderTerm = -1;
-			//idx = 0;
 			Servers = default(seq[machine]);
 			UpdatingConfig = false;
-
-			// while(idx < NumberOfServers)
-			// {	
-			// 	mac = new Server();
-			// 	Servers += (idx, mac);
-			// 	idx = idx + 1;
-			// }
-			
-			// Client = new Client();
 			raise LocalEvent;
 		}
 
@@ -194,6 +182,7 @@ machine ClusterManager
 			}
 		}
 
+		ignore Response;
 		on ShutDown do ShuttingDown;
 		on LocalEvent goto Unavailable;
 		on SentAllTicks do {
@@ -204,6 +193,7 @@ machine ClusterManager
 
     fun AddServerToCluster(server: machine){
     	UpdatingConfig = true;
+    	// send Timer, UpdateServers, (Servers=Servers);
     	send Leader, AddServer, server;
     }
 
