@@ -8,6 +8,7 @@ This machine creates 3 servers, 1 client
 machine TestDriver0 {
 	var Cluster : machine;
 	var Counter: int;
+	var ServiceCounter: int;
 	var Servers: seq[machine];
 	var NumServers: int;
     var LatestKey: string;
@@ -18,12 +19,13 @@ machine TestDriver0 {
 			var Server: machine;
 			var idx: int;
 			
+			ServiceCounter = 0;
 			Counter = 0;
 			NumServers = 3;
             LatestKey = default(string);
             LatestVal = default(string);
 			idx = 0;
-			Cluster = new ClusterManager();
+			Cluster = new ClusterManager(this);
 
 			while (idx < NumServers) {
 				Server = new Server();
@@ -40,10 +42,14 @@ machine TestDriver0 {
 			SendRequestToCluster();
 		}
 		on Response do {
-			if (Counter == 100) {
+			ServiceCounter = ServiceCounter + 1;
+			if (ServiceCounter == 100) {
 				send Cluster, ShutDown;
 				raise halt;
 			}
+		}
+
+		on TickEvent do {
 			SendRequestToCluster();
 		}
 	}
@@ -82,7 +88,7 @@ machine TestDriver1 {
             LatestKey = default(string);
             LatestVal = default(string);
 			idx = 0;
-			Cluster = new ClusterManager();
+			Cluster = new ClusterManager(this);
 
 			while (idx < NumServers) {
 				Server = new Server();
@@ -184,7 +190,7 @@ machine TestDriver2 {
             LatestKey = default(string);
             LatestVal = default(string);
 			idx = 0;
-			Cluster = new ClusterManager();
+			Cluster = new ClusterManager(this);
 
 			while (idx < NumServers) {
 				Server = new Server();

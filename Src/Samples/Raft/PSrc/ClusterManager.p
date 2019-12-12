@@ -8,6 +8,7 @@ machine ClusterManager
 	var Servers: seq[machine];
 	var NumberOfServers: int;
 	var Leader: machine;
+	var TestDriver: machine;
 	var LeaderTerm: int;
 	var Client: machine;
 	var Timer: machine;
@@ -15,11 +16,12 @@ machine ClusterManager
 
 	start state Init
 	{
-		entry
+		entry(payload : machine)
 		{
 			NumberOfServers = 0;
 			LeaderTerm = -1;
 			Servers = default(seq[machine]);
+			TestDriver = payload;
 			UpdatingConfig = false;
 			raise LocalEvent;
 		}
@@ -44,15 +46,15 @@ machine ClusterManager
 				idx = idx + 1;
 			}
 			//send Client, CConfigureEvent, this;
-			if (NumberOfServers > 1){
-				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
+			if (NumberOfServers > 2){
+				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this, TestDriver = TestDriver);
 				raise LocalEvent;
 			}
 		}
 
 		on AddServer do (server: machine){
 			var idx: int;
-			if (NumberOfServers > 1){
+			if (NumberOfServers > 2){
 				send this, AddServer, server;
 				raise LocalEvent;
 			}
@@ -60,8 +62,8 @@ machine ClusterManager
 				idx = 0;
 				Servers += (sizeof(Servers), server);
 				NumberOfServers = NumberOfServers + 1;
-				if (NumberOfServers > 1) {
-					send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
+				if (NumberOfServers > 2) {
+					send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this, TestDriver = TestDriver);
 					while(idx < NumberOfServers)
 					{
 						print "[ClusterManager | Initialize] Initializing server {0}", idx;

@@ -669,7 +669,7 @@ machine Server
 
                 VotesReceived = 0;
                 // TODO: Should this be null?
-                LastClientRequest = (Client=request.ReceiverEndpoint, Key=Logs[CommitIndex.KV].Key, Val=Logs[CommitIndex.KV].Val);
+                LastClientRequest = (Client=default(machine), Key = default(string), Val=default(string));
 
                 send request.ReceiverEndpoint, Response;
                 
