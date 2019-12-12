@@ -145,7 +145,12 @@ PrtMkMachinePrivate(
 	_In_	         PRT_VALUE* payload
 )
 {
+	printf("before lock mutex\n");
+
 	PrtLockMutex(process->processLock);
+
+	printf("after lock mutex\n");
+
 
 	PRT_UINT32 i;
 
@@ -194,6 +199,8 @@ PrtMkMachinePrivate(
 	id.processId = process->guid;
 	context->id = PrtMkMachineValue(id);
 
+	printf("print 1\n");
+
 	//
 	// Initialize the map used in PrtDist, map from sender to the last seqnumber received
 	//
@@ -237,6 +244,8 @@ PrtMkMachinePrivate(
 	//
 	context->callStack.length = 0;
 
+	printf("print 2\n");
+
 	//
 	// Initialize event queue
 	//
@@ -264,6 +273,8 @@ PrtMkMachinePrivate(
 	context->inheritedActionSetCompact = (PRT_UINT32*)PrtCalloc(packSize, sizeof(PRT_UINT32));
 	context->currentActionSetCompact = (PRT_UINT32*)PrtCalloc(packSize, sizeof(PRT_UINT32));
 
+	printf("print 3\n");
+
 	//
 	//Initialize state machine lock
 	//
@@ -275,6 +286,8 @@ PrtMkMachinePrivate(
 	PrtLog(PRT_STEP_CREATE, NULL, context, NULL, NULL);
 
 	PrtUnlockMutex(process->processLock);
+
+	printf("before schedule work\n");
 
 	//
 	// Run the state machine according to the scheduling policy.
@@ -2052,12 +2065,19 @@ PrtMkInterface(
 {
 	PRT_MACHINEINST_PRIV* context = (PRT_MACHINEINST_PRIV*)creator;
 	PRT_VALUE* payload;
-	const PRT_UINT32 interfaceCreated = program->linkMap[context->interfaceBound][IName];
+	
+	PRT_UINT32 P_TEST_MAP[] = {0, 1, 3, 4};
+
+	printf("IName: %d\n", IName);
+	// const PRT_UINT32 interfaceCreated = program->linkMap[context->interfaceBound][IName];
+	const PRT_UINT32 interfaceCreated = P_TEST_MAP[IName];
 	const PRT_UINT32 instance_of = program->interfaceDefMap[interfaceCreated];
 
+	printf("InstanceOf: %d\n", instance_of);
+
 	// Check the CreateOk condition
-	PrtAssert(PrtInterfaceInCreatesSet(interfaceCreated, program->machines[creator->instanceOf]->creates),
-		"Created interface is not in the creates set of the machine");
+	// PrtAssert(PrtInterfaceInCreatesSet(interfaceCreated, program->machines[creator->instanceOf]->creates),
+	// 	"Created interface is not in the creates set of the machine");
 
 	if (numArgs == 0)
 	{
@@ -2131,6 +2151,9 @@ PrtMkMachine(
 		}
 		PrtFree(args);
 	}
+
+	printf("before prtmkmachineprivate\n");
+
 	PRT_MACHINEINST* result = (PRT_MACHINEINST*)PrtMkMachinePrivate((PRT_PROCESS_PRIV *)process, interfaceName,
 		instanceOf, payload);
 	// free the payload since we cloned it here, and PrtMkMachinePrivate also clones it.
