@@ -27,7 +27,10 @@ machine ClusterManager
 		}
 
 		on LocalEvent goto Initialize;
-		defer SentAllTicks, AddServer, RemoveServer;
+		on SentAllTicks do {
+			send Timer, TickEvent;
+		}
+		defer AddServer, RemoveServer;
 		ignore MakeUnavailable;
 
 	}
@@ -39,6 +42,8 @@ machine ClusterManager
 			var idx: int;
 			idx = 0;
 			Timer = new WallclockTimer();
+			send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this, TestDriver = TestDriver);
+			send Timer, StartTimer;
 			while(idx < NumberOfServers)
 			{
 				print "[ClusterManager | Initialize] Initializing server {0}", idx;
@@ -47,7 +52,7 @@ machine ClusterManager
 			}
 			//send Client, CConfigureEvent, this;
 			if (NumberOfServers > 2){
-				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this, TestDriver = TestDriver);
+				send Timer, UpdateServers, Servers;
 				raise LocalEvent;
 			}
 		}
@@ -63,7 +68,7 @@ machine ClusterManager
 				Servers += (sizeof(Servers), server);
 				NumberOfServers = NumberOfServers + 1;
 				if (NumberOfServers > 2) {
-					send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this, TestDriver = TestDriver);
+					send Timer, UpdateServers, Servers;
 					while(idx < NumberOfServers)
 					{
 						print "[ClusterManager | Initialize] Initializing server {0}", idx;
@@ -83,7 +88,6 @@ machine ClusterManager
 	state Unavailable
 	{
 		entry {
-			send Timer, StartTimer;
 		}
 		on NotifyLeaderUpdate do (payload: (Leader: machine, Term: int)) {
 			UpdateLeader(payload);
