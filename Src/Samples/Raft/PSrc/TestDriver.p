@@ -25,7 +25,7 @@ machine TestDriver0 {
             LatestKey = default(string);
             LatestVal = default(string);
 			idx = 0;
-			Cluster = new ClusterManager(this);
+			Cluster = new ClusterManager();
 
 			while (idx < NumServers) {
 				Server = new Server();
@@ -43,15 +43,13 @@ machine TestDriver0 {
 		}
 		on Response do {
 			ServiceCounter = ServiceCounter + 1;
+			SendRequestToCluster();
 			if (ServiceCounter == 100) {
 				send Cluster, ShutDown;
 				raise halt;
 			}
 		}
 
-		on TickEvent do {
-			SendRequestToCluster();
-		}
 	}
     
 	fun SendRequestToCluster() {
@@ -88,7 +86,7 @@ machine TestDriver1 {
             LatestKey = default(string);
             LatestVal = default(string);
 			idx = 0;
-			Cluster = new ClusterManager(this);
+			Cluster = new ClusterManager();
 
 			while (idx < NumServers) {
 				Server = new Server();
@@ -190,7 +188,7 @@ machine TestDriver2 {
             LatestKey = default(string);
             LatestVal = default(string);
 			idx = 0;
-			Cluster = new ClusterManager(this);
+			Cluster = new ClusterManager();
 
 			while (idx < NumServers) {
 				Server = new Server();

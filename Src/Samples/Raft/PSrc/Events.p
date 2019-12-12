@@ -14,7 +14,7 @@ event AppendEntriesResponse: (Term: int, Success: bool, KV: bool, Cfg:bool, Serv
 event BecomeFollower;
 event BecomeCandidate;
 event BecomeLeader;
-event ConfigureWallclock: (Servers: seq[machine], ClusterManager: machine, TestDriver: machine);
+event ConfigureWallclock: (Servers: seq[machine], ClusterManager: machine);
 event TickEvent;
 event CancelTimer;
 event StartTimer;

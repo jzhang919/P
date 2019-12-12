@@ -8,7 +8,6 @@ machine ClusterManager
 	var Servers: seq[machine];
 	var NumberOfServers: int;
 	var Leader: machine;
-	var TestDriver: machine;
 	var LeaderTerm: int;
 	var Client: machine;
 	var Timer: machine;
@@ -16,21 +15,17 @@ machine ClusterManager
 
 	start state Init
 	{
-		entry(payload : machine)
+		entry
 		{
 			NumberOfServers = 0;
 			LeaderTerm = -1;
 			Servers = default(seq[machine]);
-			TestDriver = payload;
 			UpdatingConfig = false;
 			raise LocalEvent;
 		}
 
 		on LocalEvent goto Initialize;
-		on SentAllTicks do {
-			send Timer, TickEvent;
-		}
-		defer AddServer, RemoveServer;
+		defer AddServer, RemoveServer, Request, AddServerResponse, RemoveServerResponse;
 		ignore MakeUnavailable;
 
 	}
@@ -42,17 +37,15 @@ machine ClusterManager
 			var idx: int;
 			idx = 0;
 			Timer = new WallclockTimer();
-			send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this, TestDriver = TestDriver);
-			send Timer, StartTimer;
 			while(idx < NumberOfServers)
 			{
-				print "[ClusterManager | Initialize] Initializing server {0}", idx;
+				print "[ClusterManager | Initialize] Initializing server {0}\n", idx;
 				send Servers[idx], SConfigureEvent, (Servers = Servers, ClusterManager = this);
 				idx = idx + 1;
 			}
 			//send Client, CConfigureEvent, this;
 			if (NumberOfServers > 2){
-				send Timer, UpdateServers, Servers;
+				send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
 				raise LocalEvent;
 			}
 		}
@@ -68,10 +61,10 @@ machine ClusterManager
 				Servers += (sizeof(Servers), server);
 				NumberOfServers = NumberOfServers + 1;
 				if (NumberOfServers > 2) {
-					send Timer, UpdateServers, Servers;
+					send Timer, ConfigureWallclock, (Servers=Servers, ClusterManager=this);
 					while(idx < NumberOfServers)
 					{
-						print "[ClusterManager | Initialize] Initializing server {0}", idx;
+						print "[ClusterManager | Initialize] Initializing server {0}\n", idx;
 						send Servers[idx], SConfigureEvent, (Servers = Servers, ClusterManager = this);
 						idx = idx + 1;
 					}
@@ -79,15 +72,16 @@ machine ClusterManager
 				}
 			}
 		}
-		defer RemoveServer;
+		defer RemoveServer, Request, AddServerResponse, RemoveServerResponse;
 		on LocalEvent goto Unavailable;
-		ignore MakeUnavailable;
+		ignore MakeUnavailable, Response;
 
 	}
 
 	state Unavailable
 	{
 		entry {
+			send Timer, StartTimer;
 		}
 		on NotifyLeaderUpdate do (payload: (Leader: machine, Term: int)) {
 			UpdateLeader(payload);
@@ -99,7 +93,7 @@ machine ClusterManager
 			send Timer, TickEvent;
 		}
 		defer Request, AddServer, RemoveServer, AddServerResponse, RemoveServerResponse;
-		ignore MakeUnavailable;
+		ignore MakeUnavailable, Response;
 	}
 
 	fun UpdateLeader(request: (Leader: machine, Term: int))
@@ -128,7 +122,7 @@ machine ClusterManager
 	state Available
 	{
 		on Request do (payload: (Client: machine, Key: string, Val: string)){
-			print "[ClusterManager] Request <{0}, {1}> sent from client {2}", payload.Key, payload.Val, payload.Client;
+			print "[ClusterManager] Request <{0}, {1}> sent from client {2}\n", payload.Key, payload.Val, payload.Client;
 			send Leader, Request, (Client=payload.Client, Key=payload.Key, Val=payload.Val);
 		}
 		on RedirectRequest do (payload: (Client: machine, Key: string, Val: string)){
@@ -192,14 +186,16 @@ machine ClusterManager
 		on ShutDown do ShuttingDown;
 		on LocalEvent goto Unavailable;
 		on SentAllTicks do {
+			print "ClusterManager sending a tick event\n";
 			send Timer, TickEvent;
 		}
 		on MakeUnavailable goto Unavailable;
 	}
 
     fun AddServerToCluster(server: machine){
+    	assert 1 == 0;
     	UpdatingConfig = true;
-    	// send Timer, UpdateServers, (Servers=Servers);
+    	send Timer, UpdateServers, Servers;
     	send Leader, AddServer, server;
     }
 
