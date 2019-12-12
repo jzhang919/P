@@ -1,0 +1,13 @@
+<Project name = "Raft">
+<InputFiles>
+	<PFile>./PSrc/ClusterManager.p</PFile>
+	<PFile>./PSrc/Events.p</PFile>
+	<PFile>./PSrc/SafetyMonitor.p</PFile>
+	<PFile>./PSrc/Server.p</PFile>
+	<PFile>./PSrc/TestDriver.p</PFile>
+	<PFile>./PSrc/WallclockTimer.p</PFile>
+</InputFiles>
+<Target>C</Target>
+<TargetFileName>Raft</TargetFileName>
+<OutputDir>./PGenerated/</OutputDir>
+</Project>

@@ -2,6 +2,7 @@ machine WallclockTimer
 {
     var Servers: seq[machine];
     var ClusterManager: machine;
+    var TestDriver: machine;
 
     start state Init
     {

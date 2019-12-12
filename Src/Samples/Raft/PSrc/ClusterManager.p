@@ -25,7 +25,7 @@ machine ClusterManager
 		}
 
 		on LocalEvent goto Initialize;
-		defer SentAllTicks, AddServer, RemoveServer, Request, AddServerResponse, RemoveServerResponse;
+		defer AddServer, RemoveServer, Request, AddServerResponse, RemoveServerResponse;
 		ignore MakeUnavailable;
 
 	}
