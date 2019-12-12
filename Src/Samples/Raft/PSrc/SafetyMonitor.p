@@ -54,12 +54,12 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
 		var terms: seq[int];
 		// Terms should be increasing
 		if (Term <= CurrentTerm) {
-			print "New term {0} not greater than CurrentTerm {1}", Term, CurrentTerm;
+			print "New term {0} not greater than CurrentTerm {1}\n", Term, CurrentTerm;
 		}
 		assert(Term > CurrentTerm);
 		CurrentTerm = Term;
         if (CurrentTerm in TermsWithLeader){
-        	print "Detected more than one leader in term {0}", CurrentTerm;
+        	print "Detected more than one leader in term {0}\n", CurrentTerm;
         }
         assert(!(CurrentTerm in TermsWithLeader));
         TermsWithLeader[CurrentTerm] = true;
@@ -70,14 +70,14 @@ spec SafetyMonitor observes M_LogAppend, M_NotifyLeaderElected, M_LeaderCommitte
 		while (i < sizeof(terms)) {
 			PrevCommitted = CommittedLogs[terms[i]];
 			if (sizeof(Logs) < sizeof(PrevCommitted)) {
-				print "prevCommitted {0}", PrevCommitted;
-				print "new leader log {0}", Logs;
-				print "New Term {0} leader's Log size {1} is less than previously committed log size {2} of term {3}", CurrentTerm, sizeof(Logs), sizeof(PrevCommitted), terms[i];
+				print "prevCommitted {0}\n", PrevCommitted;
+				print "new leader log {0}\n", Logs;
+				print "New Term {0} leader's Log size {1} is less than previously committed log size {2} of term {3}\n", CurrentTerm, sizeof(Logs), sizeof(PrevCommitted), terms[i];
 			}
 			assert(sizeof(Logs) >= sizeof(PrevCommitted));
 			while (j < sizeof(PrevCommitted)) {
 				if (PrevCommitted[j] != Logs[j]) {
-					print "Newly elected leader should have all previously committed log entries from previous terms.";
+					print "Newly elected leader should have all previously committed log entries from previous terms\n";
 				}
 				assert(PrevCommitted[j] == Logs[j]);
 				j = j + 1;

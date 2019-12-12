@@ -31,6 +31,8 @@ machine WallclockTimer
     {
         // send TickEvents to every server
         var i: int;
+        i = 0;
+        print "Size of Servers: {0}\n", sizeof(Servers);
         while (i < sizeof(Servers))
         {
             send Servers[i], TickEvent;
