@@ -193,7 +193,6 @@ machine ClusterManager
 	}
 
     fun AddServerToCluster(server: machine){
-    	assert 1 == 0;
     	UpdatingConfig = true;
     	send Timer, UpdateServers, Servers;
     	send Leader, AddServer, server;

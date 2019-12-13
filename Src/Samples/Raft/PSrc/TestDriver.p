@@ -59,7 +59,7 @@ machine TestDriver0 {
 			print "before send addserver\n";
   		send Cluster, AddServer, Server;
 
-  		assert 1==0;
+  		// assert 1==0;
 			raise LocalEvent;
 		}
 
@@ -68,7 +68,7 @@ machine TestDriver0 {
 
 	state Running {
 		entry {
-			assert 1==0;
+			// assert 1==0;
 			print "on running entry\n";
 			SendRequestToCluster();
 		}

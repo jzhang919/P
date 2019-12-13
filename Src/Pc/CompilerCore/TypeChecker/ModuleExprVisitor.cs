@@ -38,17 +38,17 @@ namespace Plang.Compiler.TypeChecker
                 test.RightModExpr = modExprVisitor.Visit(context.modExpr()[1]);
             }
 
-            if (globalScope.Implementations.Any())
-            {
+            //if (globalScope.Implementations.Any())
+            //{
                 // all user defind implementations
-                foreach (Implementation impl in globalScope.Implementations)
-                {
-                    PParser.ImplementationDeclContext context = (PParser.ImplementationDeclContext)impl.SourceLocation;
-                    impl.ModExpr = modExprVisitor.Visit(context.modExpr());
-                }
-            }
-            else if (!globalScope.SafetyTests.Any())
-            {
+              //  foreach (Implementation impl in globalScope.Implementations)
+               // {
+                //    PParser.ImplementationDeclContext context = (PParser.ImplementationDeclContext)impl.SourceLocation;
+                //    impl.ModExpr = modExprVisitor.Visit(context.modExpr());
+                //}
+            //}
+            //else if (!globalScope.SafetyTests.Any())
+            //{
                 Implementation defaultImplDecl = new Implementation(ParserRuleContext.EmptyContext, "DefaultImpl")
                 {
                     Main = "Main"
@@ -64,7 +64,7 @@ namespace Plang.Compiler.TypeChecker
                 defaultImplDecl.ModExpr = new BindModuleExpr(ParserRuleContext.EmptyContext, defaultBindings);
 
                 globalScope.AddDefaultImpl(defaultImplDecl);
-            }
+            //}
         }
     }
 
