@@ -25,12 +25,11 @@ machine TestDriver0 {
 
 			print "Before LatestKey\n";
 
-      LatestKey = default(string);
-      LatestVal = default(string);
+		    LatestKey = default(string);
+		    LatestVal = default(string);
 			idx = 0;
 
 			print "Before making cluster manager\n";
-
 			Cluster = new ClusterManager();
 
 			// while (idx < NumServers) {
@@ -44,22 +43,28 @@ machine TestDriver0 {
 			// }
 			// assert 1==0;
 
-			Server = new Server();
-			Servers += (0, Server);
-			print "before send addserver\n";
-  		send Cluster, AddServer, Server;
+			// Server = new Server();
+			// Servers += (0, Server);
+			// print "before send addserver\n";
+  	// 		send Cluster, AddServer, Server;
 
-  		Server = new Server();
-			Servers += (1, Server);
-			print "before send addserver\n";
-  		send Cluster, AddServer, Server;
+	  // 		Server = new Server();
+			// Servers += (1, Server);
+			// print "before send addserver\n";
+  	// 		send Cluster, AddServer, Server;
 
-  		Server = new Server();
-			Servers += (0, Server);
-			print "before send addserver\n";
-  		send Cluster, AddServer, Server;
+  	// 		Server = new Server();
+			// Servers += (0, Server);
+			// print "before send addserver\n";
+  	// 		send Cluster, AddServer, Server;
 
-  		// assert 1==0;
+  	// 		Server = new Server();
+			// Servers += (0, Server);
+			// print "before send addserver\n";
+  	// 		send Cluster, AddServer, Server;
+
+
+  			// assert 1==0;
 			raise LocalEvent;
 		}
 
